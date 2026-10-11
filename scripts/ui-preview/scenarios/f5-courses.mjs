@@ -309,6 +309,43 @@ export default [
     },
   },
   {
+    // What Canvas’s own search returns for "example" (Oct 10 2026): ten schools, long names, shared addresses.
+    name: "f5-school-search-real",
+    sizes: [[1100, 720], [640, 480]],
+    mock: {
+      ...base,
+      lms: {
+        ...LMS,
+        schools: [
+          ["Example Online - Parents", "exampleonline"],
+          ["Example Online - Students/Faculty", "exampleonline"],
+          ["Example Tech", "exampletech"],
+          ["Example University", "iu"],
+          ["Example State University", "examplestate"],
+          ["Example University Health, Inc.", "schoolhealth"],
+          ["Example University Health, Inc. External Students", "schoolhealth"],
+          ["Bethel University (Example)", "betheluniversity"],
+          ["Lebanon Community School Corporation (Parent/Guardian Example)", "lebanon"],
+          ["Lebanon Community School Corporation (Staff/Student Example)", "lebanon"],
+        ].map(([name, sub]) => ({ name, address: `https://${sub}.instructure.com` })),
+      },
+    },
+    async run(page, h) {
+      await openFromPalette(page);
+      await page.click('[data-kind="canvas"]');
+      await page.click("[data-step-next]");
+      await waitStep(page, "school");
+      await page.focus("[data-school-input]");
+      await page.keyboard.type("example");
+      check(await waitFor(page, () => document.querySelectorAll("[data-school-option]").length === 10), "all ten are listed");
+      // Each row keeps its whole height (the list scrolls), so names and addresses never overlap.
+      const rows = await page.$$eval("[data-school-option]", (els) => els.map((e) => [e.getBoundingClientRect().height, e.scrollHeight]));
+      check(rows.every(([h, sh]) => h >= sh - 1), "no row is squeezed below its content", JSON.stringify(rows));
+      await h.idle();
+      await h.shot("listed");
+    },
+  },
+  {
     // The core says "signedOut" when the session ends mid-import: plain words, not the code.
     name: "f5-signed-out-midway",
     sizes: [[1100, 720]],
