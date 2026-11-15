@@ -30,16 +30,16 @@ const ALL = ["overview", "syllabus", "assignments", "announcements", "files", "g
 const lmsCourseList = [
   { id: "101", name: "Computer Science 101", code: "CS 101", term: "Fall 2026", current: true },
   { id: "102", name: "Calculus II", code: "MATH 201", term: "Fall 2026", current: true },
-  { id: "103", name: "Introduction to Psychology", code: "PSY-P 101", term: "Fall 2026", current: true },
-  { id: "104", name: "Elementary Spanish I", code: "SPAN-S 100", term: "Fall 2026", current: true },
-  { id: "90", name: "Introduction to Programming", code: "CSCI-C 200", term: "Spring 2026", current: false },
-  { id: "91", name: "Writing and Research", code: "ENG-W 131", term: "Spring 2026", current: false },
+  { id: "103", name: "Introduction to Psychology", code: "PSY 101", term: "Fall 2026", current: true },
+  { id: "104", name: "Elementary Spanish I", code: "SPAN 101", term: "Fall 2026", current: true },
+  { id: "90", name: "Introduction to Programming", code: "CS 100", term: "Spring 2026", current: false },
+  { id: "91", name: "Writing and Research", code: "ENG 110", term: "Spring 2026", current: false },
 ];
 const schools = [
-  { name: "Example University Downtown", address: "https://school.instructure.com" },
+  { name: "Example University", address: "https://school.instructure.com" },
   { name: "Example University Downtown", address: "https://school.instructure.com" },
   { name: "Example State University", address: "https://examplestate.instructure.com" },
-  { name: "Ivy Tech Community College", address: "https://examplecc.instructure.com" },
+  { name: "Example Community College", address: "https://examplecc.instructure.com" },
 ];
 const connections: { id: string; kind: string; address: string; schoolName?: string; signedIn: boolean; lastSync?: number; courses: string[] }[] = empty
   ? []
@@ -48,7 +48,7 @@ const connections: { id: string; kind: string; address: string; schoolName?: str
         id: "c1",
         kind: "canvas",
         address: "https://school.instructure.com",
-        schoolName: "Example University Downtown",
+        schoolName: "Example University",
         signedIn: scenario !== "signedout",
         lastSync: Date.now() - 3 * DAY,
         courses: ["101", "102", "103"],
@@ -237,7 +237,7 @@ const grounding = {
   asked: 7,
   kept: 5,
   dropped: [
-    { text: "How many edges does $K_5$ have?", why: "Graphs aren’t on Test 1." },
+    { text: "How many edges does $K_5$ have?", why: "Series aren’t on Test 1." },
     { text: "Which rule gives $\\binom{n}{k}$?", why: "The quote isn’t in Textbook chapter 2.pdf." },
   ],
   coverage: [
@@ -303,8 +303,8 @@ const scopeViews: Record<string, unknown> = {
         { id: "t2", title: "Sets and set operations", sections: "§2.1–2.2", terms: [], weight: 2, homework: ["Problem set 3"], evidence: [] },
         { id: "t3", title: "Functions", sections: "§2.3", terms: [], weight: 2, homework: ["Problem set 5"], evidence: [] },
         { id: "t4", title: "Induction", sections: "§5.1", terms: [], weight: 1, homework: ["Problem set 6"], evidence: [] },
-        { id: "t5", title: "Graphs", sections: "§10.1", terms: [], weight: 1, homework: [], evidence: [] },
-        { id: "t6", title: "Combinatorics", sections: "§6.1", terms: [], weight: 1, homework: [], evidence: [] },
+        { id: "t5", title: "Series", sections: "§10.1", terms: [], weight: 1, homework: [], evidence: [] },
+        { id: "t6", title: "Sequences", sections: "§6.1", terms: [], weight: 1, homework: [], evidence: [] },
       ],
       notation: [],
       exams: [
@@ -315,7 +315,7 @@ const scopeViews: Record<string, unknown> = {
           summary: "through Problem set 6",
           includes: ["t1", "t2", "t3", "t4"],
           excludes: ["t5", "t6"],
-          excludedWords: ["graphs", "combinatorics"],
+          excludedWords: ["series", "sequences"],
           homework: ["Problem set 1", "Problem set 6"],
           evidence: [{ source: `${CS101}/announcements.md`, quote: "Test 1 covers everything through Homework 6. It will not cover series or sequences." }],
           fromUser: false,

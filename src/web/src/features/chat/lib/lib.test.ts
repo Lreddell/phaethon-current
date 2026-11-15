@@ -189,6 +189,6 @@ describe("links", () => {
     expect(spacePathOf("https://example.com")).toBeNull();
     expect(spacePathOf("#top")).toBeNull();
     expect(spacePathOf("/etc/hosts")).toBeNull();
-    expect(spacePathOf("courses/M%20301/README.md")).toBe("courses/MATH 301/README.md");
+    expect(spacePathOf("courses/MATH%20301/README.md")).toBe("courses/MATH 301/README.md");
   });
 });
