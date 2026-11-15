@@ -118,3 +118,13 @@ Every ask since the UI complaints began, in order. Status: `done` (merged in mai
 | 75 | The back button inside the course card is hard to find → above the card | done |
 | 76 | Polish the assignments table | done — category after the title, four columns, shorter rows, small badges |
 | 77 | Coding agents: cards waste vertical space; unclear if usage is left or used; drop the disclaimer at the top | done — one line per account, "38% used", no intro |
+| 78 | Provider logos shouldn't sit in boxes | done — settings cards lead with the bare mark |
+| 79 | No containing boxes around card and row icons anywhere | done — settings, plan, course sites, connect dialog, viewer placeholder |
+| 80 | Use school and course-site logos | done — the site's own icon (fetched once a week by the core), else the Canvas or Moodle mark, else a D2L / Bb monogram |
+| 81 | About › Licenses: just "MIT" and a link to the GitHub licence page | done |
+| 82 | The P mark should be Phaethon blue | done — `BrandMark` is `text-primary` everywhere |
+| 83 | File reference hovers still look horrible | done — inline files read like links (underline on hover), no tint box, no path tooltip; citations the same, muted |
+| 84 | A quiz the AI proposes shouldn't need the whole flow finished by hand | done — the chat card makes it on one click when the plan says enough; the dialog opens only for a missing answer |
+| 85 | The make flow says you can close it, but closing stopped the run and nothing showed its progress | done — runs live in a job store; closing keeps them going; Study lists them under "Making now" with progress and Stop; the chat card shows its own |
+| 86 | Pressing Make again starts a second run | done — the same course, test and kind joins the run under way |
+| 87 | No word when a run finishes out of sight | done — a toast with "Open" |
