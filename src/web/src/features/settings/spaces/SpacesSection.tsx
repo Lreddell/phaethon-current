@@ -8,6 +8,7 @@ import { SkeletonCard, SkeletonRows } from "@/components/skeletons";
 import { SpaceAvatar } from "@/components/space-avatar";
 import { toast } from "@/components/toast";
 import { StartTruncate, Truncate } from "@/components/truncate";
+import { AsyncButton } from "@/components/async-button";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
@@ -282,7 +283,7 @@ function AgentsGroup({ space }: { space: SpaceView }) {
           description={
             w ? (
               <span className="flex min-w-0 flex-col gap-0.5">
-                <StartTruncate value={w.path} className="font-mono text-[11px]" />
+                <StartTruncate value={w.path} className="font-mono text-2xs" />
                 {!w.available ? (
                   <span className="flex items-center gap-1 text-warning-foreground">
                     <TriangleAlertIcon className="size-3 shrink-0" />
@@ -306,7 +307,7 @@ function AgentsGroup({ space }: { space: SpaceView }) {
               Use Phaethon’s folder
             </Button>
           ) : null}
-          <Button size="xs" variant="outline" onClick={() => void choose()} disabled={busy !== null || !w} className="min-w-[5.5rem]">
+          <Button size="xs" variant="outline" onClick={() => void choose()} disabled={busy !== null || !w} className="min-w-22">
             {busy === "choose" ? <Spinner /> : null}
             {busy === "choose" ? "Choosing…" : "Choose…"}
           </Button>
@@ -372,7 +373,7 @@ function GrantsGroup({ space, spaces }: { space: SpaceView; spaces: SpaceView[] 
                     <SpaceAvatar name={nameOf(r.other)} hue={hueOf(r.other)} />
                     <div className="flex min-w-0 flex-1 flex-col">
                       <Truncate className="text-sm">{r.text}</Truncate>
-                      <StartTruncate value={r.path} className="font-mono text-[11px] text-muted-foreground" />
+                      <StartTruncate value={r.path} className="font-mono text-2xs text-muted-foreground" />
                     </div>
                     <Button size="xs" variant="ghost-destructive" onClick={() => void revoke(r.id, `${r.text}: ${r.path}`)}>
                       Remove
@@ -390,6 +391,51 @@ function GrantsGroup({ space, spaces }: { space: SpaceView; spaces: SpaceView[] 
                   ))}
                 </div>
               ) : null}
+            </Card>
+          );
+        }}
+      </Loader>
+    </Group>
+  );
+}
+
+function WritesGroup({ space }: { space: SpaceView }) {
+  const perms = useLoad(() => api.writePermissions(space.id), [space.id]);
+  const revoke = async (what: string, change: { thread?: string; scope: "conversation" | "space" }) => {
+    try {
+      await api.setWritePermission({ space: space.id, ...change, allow: false });
+      await perms.reload();
+      toast.success("Phaethon will ask again", what);
+    } catch (e) {
+      toast.error("Couldn’t change that", cleanMessage(e));
+    }
+  };
+  const since = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return (
+    <Group label="Changing files without asking">
+      <Loader state={perms} errorTitle="Couldn’t read what may change files" skeleton={<SkeletonCard rows={1} />}>
+        {(p) => {
+          const rows = [
+            ...p.spaces.map((x) => ({ key: "space", label: `Every conversation in ${space.name}`, since: x.since, change: { scope: "space" as const } })),
+            ...p.conversations.map((x) => ({ key: x.thread, label: x.title, since: x.since, change: { scope: "conversation" as const, thread: x.thread } })),
+          ];
+          return (
+            <Card>
+              {rows.length === 0 ? (
+                <div className="px-3.5 py-6 text-center text-muted-foreground text-xs">Phaethon asks before it changes a file here.</div>
+              ) : (
+                rows.map((r) => (
+                  <div key={r.key} className="flex min-h-11 items-center gap-2.5 px-3.5 py-2">
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <Truncate className="text-sm">{r.label}</Truncate>
+                      <span className="text-2xs text-muted-foreground tabular-nums">Since {since(r.since)}</span>
+                    </div>
+                    <Button size="xs" variant="ghost-destructive" onClick={() => void revoke(r.label, r.change)}>
+                      Ask again
+                    </Button>
+                  </div>
+                ))
+              )}
             </Card>
           );
         }}
@@ -427,9 +473,9 @@ function ExportGroup({ space }: { space: SpaceView }) {
           </Button>
         </Row>
         <Row label="Space folder" description="Open it in your file manager.">
-          <Button size="xs" variant="outline" onClick={() => void api.showSpace(space.id).catch((e) => toast.error("Couldn’t show the folder", cleanMessage(e)))}>
+          <AsyncButton size="xs" variant="outline" action={() => api.showSpace(space.id)} failure="Couldn’t show the folder">
             Show
-          </Button>
+          </AsyncButton>
         </Row>
       </Card>
     </Group>
@@ -443,6 +489,7 @@ function SpaceDetail({ space, spaces, onBack }: { space: SpaceView; spaces: Spac
       <IdentityGroup space={space} />
       <AgentsGroup space={space} />
       <GrantsGroup space={space} spaces={spaces} />
+      <WritesGroup space={space} />
       <ExportGroup space={space} />
     </>
   );
@@ -500,7 +547,7 @@ export function SpacesSection() {
                 </span>
                 {s.description ? <Truncate className="text-muted-foreground text-xs">{s.description}</Truncate> : <span className="text-subtle-foreground text-xs">No description</span>}
               </span>
-              <ChevronRightIcon className="size-4 shrink-0 text-subtle-foreground transition-colors group-hover:text-foreground" strokeWidth={1.75} />
+              <ChevronRightIcon className="size-4 shrink-0 text-subtle-foreground transition-colors group-hover:text-foreground" />
             </button>
           ))}
         </Card>

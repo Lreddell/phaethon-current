@@ -35,7 +35,7 @@ export function ClampedText({ text, lines = 2, className }: { text: string; line
     const el = ref.current;
     if (el && !open) setCut(el.scrollHeight > el.clientHeight + 1);
   }, [text, open]);
-  const clamp = lines === 2 ? "line-clamp-2" : lines === 3 ? "line-clamp-3" : "line-clamp-[12]";
+  const clamp = lines === 2 ? "line-clamp-2" : lines === 3 ? "line-clamp-3" : "line-clamp-12";
   return (
     <div className={className}>
       <div ref={ref} className={cn("whitespace-pre-wrap [overflow-wrap:anywhere]", !open && clamp)}>
@@ -54,7 +54,7 @@ export function FieldError({ children, className }: { children: ReactNode; class
   if (!children) return null;
   return (
     <p className={cn("flex items-start gap-1.5 text-destructive-foreground text-xs", className)} role="alert">
-      <CircleAlertIcon className="mt-0.5 size-3 shrink-0" strokeWidth={2} />
+      <CircleAlertIcon className="mt-0.5 size-3 shrink-0" />
       <span className="min-w-0 [overflow-wrap:anywhere]">{children}</span>
     </p>
   );
@@ -64,7 +64,7 @@ export function FieldError({ children, className }: { children: ReactNode; class
 export function RowError({ message, onRetry, className }: { message: string; onRetry?: () => void; className?: string }) {
   return (
     <div className={cn("flex min-w-0 items-center gap-2 text-muted-foreground text-xs", className)}>
-      <CircleAlertIcon className="size-3.5 shrink-0 text-error" strokeWidth={2} />
+      <CircleAlertIcon className="size-3.5 shrink-0 text-error" />
       <span className="min-w-0 truncate" title={message}>
         {message}
       </span>

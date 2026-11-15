@@ -72,7 +72,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
     <main className="flex h-full flex-col bg-background">
       <div className="app-drag h-(--titlebar-height) shrink-0" />
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex min-h-full w-full max-w-sm flex-col px-4 pt-[8vh] pb-10">
+        <div className="mx-auto flex min-h-full w-full max-w-sm flex-col px-4 pt-16 pb-10">
           <Dots step={draft.step} />
           {draft.step === 0 ? <Welcome onNext={() => patch({ step: 1 })} /> : null}
           {draft.step === 1 ? <Answers draft={draft} patch={patch} onBack={() => patch({ step: 0 })} onNext={() => patch({ step: 2 })} /> : null}
@@ -110,7 +110,7 @@ function Footer({ onBack, children }: { onBack?: () => void; children: ReactNode
 function Welcome({ onNext }: { onNext: () => void }) {
   return (
     <section>
-      <h1 className="font-semibold text-2xl tracking-[-0.02em]">Welcome to Phaethon</h1>
+      <h1 className="font-semibold text-2xl tracking-hero">Welcome to Phaethon</h1>
       <p className="mt-2 text-base text-muted-foreground">An assistant that keeps each part of your life in its own space, with its own files, conversations and memory.</p>
       <Footer>
         <Button size="sm" autoFocus onClick={onNext}>
@@ -147,16 +147,16 @@ function Answers({ draft, patch, onBack, onNext }: { draft: Draft; patch: (p: Pa
 
   return (
     <section>
-      <h1 className="font-semibold text-xl tracking-[-0.015em]">How should Phaethon answer?</h1>
+      <h1 className="font-semibold text-xl tracking-heading">How should Phaethon answer?</h1>
       <p className="mt-1.5 text-muted-foreground text-sm">Use a key from a model provider, or a coding agent you already have. You can change this in Settings.</p>
       {readyName ? (
         <p className="mt-4 flex items-center gap-1.5 text-sm text-success-foreground">
-          <CheckIcon className="size-3.5" strokeWidth={2.5} />
+          <CheckIcon className="size-3.5" />
           <Truncate>Answers with {readyName}</Truncate>
         </p>
       ) : null}
       <div className="mt-5 flex flex-col gap-2">
-        <Choice icon={<KeyRoundIcon strokeWidth={1.75} />} title="An API key" text="Anthropic, OpenAI, OpenRouter and others" on={draft.method === "key"} onClick={() => patch({ method: draft.method === "key" ? null : "key" })}>
+        <Choice icon={<KeyRoundIcon />} title="An API key" text="Anthropic, OpenAI, OpenRouter and others" on={draft.method === "key"} onClick={() => patch({ method: draft.method === "key" ? null : "key" })}>
           {settingsError ? (
             <RowError message="Couldn’t read your settings." onRetry={load} />
           ) : settings ? (
@@ -165,7 +165,7 @@ function Answers({ draft, patch, onBack, onNext }: { draft: Draft; patch: (p: Pa
             <SkeletonRows count={2} />
           )}
         </Choice>
-        <Choice icon={<SquareTerminalIcon strokeWidth={1.75} />} title="A coding agent" text="Claude Code, Codex or Gemini CLI" on={draft.method === "agent"} onClick={() => patch({ method: draft.method === "agent" ? null : "agent" })}>
+        <Choice icon={<SquareTerminalIcon />} title="A coding agent" text="Claude Code, Codex or Gemini CLI" on={draft.method === "agent"} onClick={() => patch({ method: draft.method === "agent" ? null : "agent" })}>
           <AgentList chosen={ready} onUse={setReady} />
         </Choice>
       </div>
@@ -289,7 +289,7 @@ function KeyForm({ settings, provider, onProvider, onSaved }: { settings: Settin
           </FieldError>
         ) : outcome ? (
           <p className={cn("flex items-start gap-1.5 text-xs", outcome.kind === "no-credit" ? "text-warning-foreground" : "text-success-foreground")}>
-            <CheckIcon className="mt-0.5 size-3 shrink-0" strokeWidth={2.5} />
+            <CheckIcon className="mt-0.5 size-3 shrink-0" />
             {outcomeText(outcome, info)}
           </p>
         ) : null}
@@ -367,7 +367,7 @@ function AgentList({ chosen, onUse }: { chosen: string | null; onUse: (backend: 
                 <span className="text-muted-foreground text-xs">Not installed</span>
               ) : on ? (
                 <span className="flex items-center gap-1 text-success-foreground text-xs">
-                  <CheckIcon className="size-3" strokeWidth={2.5} />
+                  <CheckIcon className="size-3" />
                   In use
                 </span>
               ) : waiting ? (
@@ -435,7 +435,7 @@ function FirstSpace({ draft, patch, onBack, onDone }: { draft: Draft; patch: (p:
 
   return (
     <section>
-      <h1 className="font-semibold text-xl tracking-[-0.015em]">{existing ? "Your spaces" : "Make your first space"}</h1>
+      <h1 className="font-semibold text-xl tracking-heading">{existing ? "Your spaces" : "Make your first space"}</h1>
       <p className="mt-1.5 text-muted-foreground text-sm">
         {existing ? "This Phaethon folder already has spaces. Pick up where you left off, or add another." : "A space holds one part of your life, like school or work. You can add more later."}
       </p>

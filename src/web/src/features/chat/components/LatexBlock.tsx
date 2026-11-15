@@ -40,7 +40,7 @@ function PdfPages({ id }: { id: string }) {
   }, [id]);
   if (error) return <p className="p-3 text-muted-foreground text-xs">Couldn’t show the PDF: {error}</p>;
   return (
-    <div ref={box} className="flex max-h-[32rem] flex-col items-center gap-2 overflow-auto bg-muted/40 p-3">
+    <div ref={box} className="flex max-h-128 flex-col items-center gap-2 overflow-auto bg-muted/40 p-3">
       {Array.from({ length: Math.max(1, Math.min(pages, 12)) }, (_, i) => (
         <canvas key={i} className={cn("rounded-sm bg-white shadow-xs", pages === 0 && "h-40 w-full animate-skeleton")} />
       ))}
@@ -86,7 +86,7 @@ export function LatexBlock({ source, space, streaming }: { source: string; space
       <div className="flex h-8 items-center gap-1 border-b px-2">
         <div className="flex items-center gap-0.5 rounded-md bg-muted p-0.5">
           {(["pdf", "source"] as const).map((t) => (
-            <button key={t} type="button" onClick={() => setTab(t)} className={cn("h-5 rounded-[5px] px-1.5 font-medium text-2xs", tab === t ? "bg-background text-foreground shadow-xs/5 dark:bg-white/10" : "text-muted-foreground hover:text-foreground")}>
+            <button key={t} type="button" onClick={() => setTab(t)} className={cn("h-5 rounded-sm px-1.5 font-medium text-2xs", tab === t ? "bg-background text-foreground shadow-xs/5 dark:bg-white/10" : "text-muted-foreground hover:text-foreground")}>
               {t === "pdf" ? "PDF" : "LaTeX"}
             </button>
           ))}
@@ -117,7 +117,7 @@ export function LatexBlock({ source, space, streaming }: { source: string; space
       ) : (
         <div className="flex flex-col gap-2 p-3">
           <div className="flex items-start gap-2 text-sm">
-            <FileWarningIcon className="mt-0.5 size-4 shrink-0 text-warning" strokeWidth={1.75} />
+            <FileWarningIcon className="mt-0.5 size-4 shrink-0 text-warning" />
             <div className="min-w-0 flex-1">
               <p className="font-medium">{outcome.status === "failed" ? `Didn’t compile${outcome.line ? ` (line ${outcome.line})` : ""}` : outcome.status === "noEngine" ? "No TeX on this computer" : "Can’t compile here"}</p>
               <ClampedText className="text-muted-foreground text-xs" text={outcome.message} />

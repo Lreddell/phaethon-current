@@ -26,11 +26,11 @@ export function CitationChip({ space, citation }: { space: string; citation: Cit
           <button
             type="button"
             onClick={() => openFile(space, check?.path ?? citation.path)}
-            className="mx-0.5 inline-flex max-w-52 translate-y-[-1px] items-center gap-1 rounded-md border bg-muted/60 px-1.5 align-middle font-medium text-2xs text-muted-foreground leading-5 hover:text-foreground"
+            className="mx-0.5 inline-flex max-w-52 -translate-y-px items-center gap-1 rounded-md border bg-muted/60 px-1.5 align-middle font-medium text-2xs text-muted-foreground leading-5 hover:text-foreground"
           />
         }
       >
-        <FileTextIcon className="size-3 shrink-0" strokeWidth={2} />
+        <FileTextIcon className="size-3 shrink-0" />
         <span className="truncate">{citeName(citation.path)}</span>
       </PreviewCardTrigger>
       <PreviewCardPopup className="w-80">

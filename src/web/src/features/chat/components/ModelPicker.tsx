@@ -1,5 +1,6 @@
 import { CheckIcon, ChevronDownIcon, LayoutGridIcon, SearchIcon, Settings2Icon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useViewActive } from "@/app/Header";
 import { useNav } from "@/app/store";
 import { ProviderIcon } from "@/components/provider-icon";
 import { RowError } from "@/components/errors";
@@ -20,6 +21,9 @@ import { EffortGlyph } from "./EffortGlyph";
 
 const sameModel = (a: ModelPick, b: Pick<CatalogModel, "backend" | "model">) => a.backend === b.backend && a.model === b.model;
 
+/** Dispatched on window (the composer's `/model`) to open the picker. */
+export const OPEN_MODEL_PICKER = "phaethon:open-model-picker";
+
 export function ModelPicker({ pick, onPick, disabled }: { pick: ModelPick; onPick: (p: ModelPick) => void; disabled?: boolean }) {
   const { groups, status, error, load, loadModels } = useCatalog();
   const openSettings = useNav((s) => s.openSettings);
@@ -30,6 +34,13 @@ export function ModelPicker({ pick, onPick, disabled }: { pick: ModelPick; onPic
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => void load(), [load]);
+  const visible = useViewActive();
+  useEffect(() => {
+    if (disabled || !visible) return;
+    const show = () => setOpen(true);
+    window.addEventListener(OPEN_MODEL_PICKER, show);
+    return () => window.removeEventListener(OPEN_MODEL_PICKER, show);
+  }, [disabled, visible]);
   useEffect(() => {
     if (!open) return;
     setQuery("");
@@ -80,13 +91,13 @@ export function ModelPicker({ pick, onPick, disabled }: { pick: ModelPick; onPic
         <ProviderIcon id={groupIdOf(pick)} className="size-3.5" />
         <span className="min-w-0 truncate font-medium">{name}</span>
         {current?.need ? <span className="size-1.5 shrink-0 rounded-full bg-warning" aria-label={current.need} /> : null}
-        <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" strokeWidth={2.25} />
+        <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" />
       </PopoverTrigger>
-      <PopoverPopup side="top" align="end" padding="none" className="w-[30rem] max-w-[calc(100vw-2rem)]" initialFocus={() => document.getElementById("model-search") as HTMLElement}>
-        <div className="flex h-[21rem] max-h-(--available-height) min-h-0">
+      <PopoverPopup side="top" align="end" padding="none" className="w-120 max-w-(--viewport-max-width)" initialFocus={() => document.getElementById("model-search") as HTMLElement}>
+        <div className="flex h-84 max-h-(--available-height) min-h-0">
           <div className="flex w-11 shrink-0 flex-col items-center gap-0.5 overflow-y-auto border-r bg-muted/40 py-1.5" role="tablist" aria-label="Providers">
             <RailButton active={rail === "all"} label="All models" onClick={() => setRail("all")}>
-              <LayoutGridIcon className="size-4 text-muted-foreground" strokeWidth={1.75} />
+              <LayoutGridIcon className="size-4 text-muted-foreground" />
             </RailButton>
             <div className="my-1 h-px w-6 bg-border" />
             {groups.map((g) => (
@@ -106,7 +117,7 @@ export function ModelPicker({ pick, onPick, disabled }: { pick: ModelPick; onPic
           </div>
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="flex h-9 shrink-0 items-center gap-2 border-b px-3">
-              <SearchIcon className="size-3.5 shrink-0 text-subtle-foreground" strokeWidth={2} />
+              <SearchIcon className="size-3.5 shrink-0 text-subtle-foreground" />
               <input
                 id="model-search"
                 value={query}
@@ -223,7 +234,7 @@ function GroupRows({
                 <EffortGlyph level={m.defaultEffort ?? "medium"} levels={m.efforts} className="size-3" />
               </span>
             ) : null}
-            <CheckIcon className={cn("size-3.5 shrink-0", selected ? "opacity-100" : "opacity-0")} strokeWidth={2.25} />
+            <CheckIcon className={cn("size-3.5 shrink-0", selected ? "opacity-100" : "opacity-0")} />
           </div>
         );
       })}
@@ -246,7 +257,7 @@ export function EffortPicker({ pick, onPick, disabled }: { pick: ModelPick; onPi
         className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-foreground/70 text-xs transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60 data-popup-open:bg-accent"
       >
         <EffortGlyph level={level} levels={model.efforts} className="size-3.5" />
-        <span className="max-[620px]:hidden">{EFFORT_LABEL[level] ?? level}</span>
+        <span className="@max-md/composer:hidden">{EFFORT_LABEL[level] ?? level}</span>
       </PopoverTrigger>
       <PopoverPopup side="top" align="end" padding="none" className="w-44">
         <div className="p-1">
@@ -264,7 +275,7 @@ export function EffortPicker({ pick, onPick, disabled }: { pick: ModelPick; onPi
               <EffortGlyph level={e} levels={model.efforts} className="size-3.5 text-muted-foreground" />
               <span className="flex-1 text-left">{EFFORT_LABEL[e] ?? e}</span>
               {e === model.defaultEffort ? <span className="text-2xs text-subtle-foreground">default</span> : null}
-              <CheckIcon className={cn("size-3.5", e === level ? "opacity-100" : "opacity-0")} strokeWidth={2.25} />
+              <CheckIcon className={cn("size-3.5", e === level ? "opacity-100" : "opacity-0")} />
             </button>
           ))}
         </div>
