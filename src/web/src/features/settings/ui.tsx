@@ -37,7 +37,7 @@ export function Tile({ children, className }: { children: ReactNode; className?:
   return (
     <span
       aria-hidden
-      className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl border bg-card text-foreground shadow-card [&_svg]:size-5 [&_img]:size-5", className)}
+      className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl border bg-card text-foreground [&_svg]:size-5 [&_img]:size-5", className)}
     >
       {children}
     </span>
@@ -66,12 +66,12 @@ export function SettingsCard({
   id?: string;
 }) {
   return (
-    <section id={id} data-slot="settings-card" className={cn("overflow-hidden rounded-card border bg-card shadow-card", className)}>
+    <section id={id} data-slot="settings-card" className={cn("overflow-hidden rounded-card border bg-card", className)}>
       {media ? <div className="[--art-veil:var(--art-veil-strip)]">{media}</div> : null}
       <header className="flex items-center gap-4 p-5">
         {icon ? <Tile>{icon}</Tile> : null}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <h2 className="truncate font-medium text-lg tracking-title">{title}</h2>
+          <h2 className="truncate font-medium text-base tracking-title">{title}</h2>
           {description ? <div className="min-w-0 text-muted-foreground text-sm">{description}</div> : null}
         </div>
         {action ? <div className="flex shrink-0 items-center gap-1.5">{action}</div> : null}
@@ -197,15 +197,30 @@ export function Status({ tone, children, className }: { tone: "ready" | "warning
 
 export type Loaded<T> = { data: T | undefined; error: string | null; loading: boolean; reload: () => Promise<void>; setData: (d: T) => void };
 
-/** Runs `fn` on mount (and when deps change); keeps the last data while reloading. */
+/** What each loader last returned, so a section comes back as it was and only refreshes quietly. */
+const remembered = new Map<string, unknown>();
+
+/**
+ * Runs `fn` on mount (and when deps change); keeps the last data while
+ * reloading, and across visits: the same loader shows its last answer at once
+ * and refreshes it in the background.
+ */
 export function useLoad<T>(fn: () => Promise<T>, deps: DependencyList = []): Loaded<T> {
-  const [data, setData] = useState<T | undefined>(undefined);
+  const key = `${fn.toString()}|${JSON.stringify(deps)}`;
+  const [data, setDataState] = useState<T | undefined>(() => remembered.get(key) as T | undefined);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!remembered.has(key));
   const seq = useRef(0);
+  const setData = useCallback(
+    (d: T) => {
+      remembered.set(key, d);
+      setDataState(d);
+    },
+    [key],
+  );
   const reload = useCallback(async () => {
     const n = ++seq.current;
-    setLoading(true);
+    if (!remembered.has(key)) setLoading(true);
     setError(null);
     try {
       const d = await fn();
@@ -299,7 +314,7 @@ export function ConfirmDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogPopup className="max-w-md">
         <AlertDialogHeader className="gap-2 p-5">
-          <AlertDialogTitle className="text-lg">{title}</AlertDialogTitle>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription render={<div />} className="flex flex-col gap-2">
             {children}
           </AlertDialogDescription>

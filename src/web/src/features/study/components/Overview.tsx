@@ -160,9 +160,6 @@ function ago(ms: number): string {
   return t === "now" ? "just now" : /^\d+[mhd]$/.test(t) ? `${t} ago` : t;
 }
 
-/** Chosen so the lilac mesh has one saturated blob near the middle of the strip (2c35, d1d3), not even bands. */
-const HERO_SEED = "study-2686";
-
 const newCards = (data: StudyOverview) => data.decks.reduce((n, d) => n + d.new, 0);
 
 /** The quiz to suggest when no cards want you: one never taken, else the one taken longest ago. */
@@ -186,13 +183,10 @@ function DueCard({ data, onReview, onQuiz, onMake }: { data: StudyOverview; onRe
     streak > 1 ? `${streak}-day streak` : null,
   ].filter(Boolean);
   return (
-    <Card data-testid="study-due" className="rounded-panel">
-      <CardMedia className="h-28">
-        <ArtCanvas palette="lilac" seed={HERO_SEED} weave className="absolute inset-0" />
-      </CardMedia>
+    <Card data-testid="study-due">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-4 p-5">
         <div className="min-w-0 flex-1">
-          <h2 className="font-medium text-xl tabular-nums tracking-title">{title}</h2>
+          <h2 className="font-medium text-lg tabular-nums tracking-title">{title}</h2>
           {meta.length ? <p className="mt-1 text-muted-foreground text-sm tabular-nums">{meta.join(" · ")}</p> : null}
         </div>
         {due || fresh ? (
@@ -235,7 +229,7 @@ function Section({ icon, label, count, action, onAction, children }: { icon: Ico
     <section className="flex flex-col gap-4" aria-label={label}>
       <div className="flex h-8 items-center gap-2.5">
         <Icon icon={icon} className="size-4.5 text-muted-foreground" />
-        <h2 className="font-medium text-lg tracking-title">{label}</h2>
+        <h2 className="font-medium text-base tracking-title">{label}</h2>
         {count ? <span className="text-sm text-subtle-foreground tabular-nums">{count}</span> : null}
         <Button size="xs" variant="ghost-muted" className="ml-auto" onClick={onAction}>
           <Icon icon={icons.add} />
@@ -249,8 +243,8 @@ function Section({ icon, label, count, action, onAction, children }: { icon: Ico
 
 /**
  * An artifact card (after b72b): a grey frame holding a white sheet that runs
- * off its bottom edge, with the item's glyph, a line about it and a thin
- * meter; the name and a muted line sit under the frame.
+ * off its bottom edge, with the item's glyph and its first line; the name
+ * and a muted line sit under the frame.
  */
 function ArtifactCard({
   index,
@@ -258,7 +252,6 @@ function ArtifactCard({
   title,
   line,
   badge,
-  meter,
   meta,
   onOpen,
   menu,
@@ -268,8 +261,6 @@ function ArtifactCard({
   title: string;
   line: ReactNode;
   badge?: ReactNode;
-  /** 0..1, or null when there's nothing to measure yet. */
-  meter: number | null;
   meta: ReactNode;
   onOpen: () => void;
   menu: ReactNode;
@@ -289,26 +280,13 @@ function ArtifactCard({
         onClick={onOpen}
         className="absolute inset-0 cursor-pointer rounded-card outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4 focus-visible:ring-offset-background"
       />
-      <div className="pointer-events-none relative h-36 overflow-hidden rounded-card border border-border/70 bg-well transition-colors duration-150 group-hover:border-border-strong">
-        <div className="absolute inset-x-8 top-5 -bottom-px flex flex-col gap-3 rounded-t-xl border border-b-0 bg-card px-5 pt-5 shadow-card transition-transform duration-200 ease-(--ease-out-soft) group-hover:-translate-y-1">
+      <div className="pointer-events-none relative h-28 overflow-hidden rounded-card border border-border/70 bg-well transition-colors duration-150 group-hover:border-border-strong">
+        <div className="absolute inset-x-8 top-5 -bottom-px flex flex-col gap-3 rounded-t-xl border border-b-0 bg-card px-5 pt-5 transition-transform duration-200 ease-(--ease-out-soft) group-hover:-translate-y-1">
           <div className="flex items-center justify-between gap-2">
             <Icon icon={icon} className="size-4.5 text-muted-foreground" />
             {badge}
           </div>
           <div className="h-5 min-w-0 overflow-hidden text-muted-foreground text-sm">{line}</div>
-          <div className="flex flex-col gap-2" aria-hidden>
-            <span className="relative h-1.5 overflow-hidden rounded-full bg-muted">
-              {meter != null ? (
-                <motion.span
-                  className="absolute inset-y-0 left-0 rounded-full bg-foreground/30"
-                  initial={reduce ? false : { width: 0 }}
-                  animate={{ width: `${Math.max(meter > 0 ? 3 : 0, meter * 100)}%` }}
-                  transition={{ duration: 0.5, delay: 0.1 + Math.min(index, 6) * 0.03, ease: EASE }}
-                />
-              ) : null}
-            </span>
-            <span className="h-1.5 w-2/3 rounded-full bg-muted" />
-          </div>
         </div>
       </div>
       <div className="absolute top-2 right-2">{menu}</div>
@@ -370,7 +348,6 @@ function DeckCard({ index, space, deck, onOpen, onEdit, onDelete }: { index: num
       title={deck.title}
       line={<SheetLine text={deck.firstFront} fallback="No cards yet" space={space} id={`sheet-${deck.path}`} />}
       badge={deck.due ? <Chip tone="primary">{deck.due} due</Chip> : deck.new ? <Chip>{deck.new} new</Chip> : null}
-      meter={deck.cards ? deck.mastery : null}
       meta={meta}
       onOpen={onOpen}
       menu={
@@ -410,7 +387,6 @@ function QuizCard({ index, space, quiz, onOpen, onDelete }: { index: number; spa
           <Chip tone={quiz.lastScore < 0.6 ? "warning" : "muted"}>{percent(quiz.lastScore)}</Chip>
         ) : null
       }
-      meter={quiz.lastScore ?? null}
       meta={meta}
       onOpen={onOpen}
       menu={
@@ -449,7 +425,7 @@ function EmptyStudy({ noCourses, onCourses, onMake, onWrite }: { noCourses: bool
         <ArtCanvas palette="lilac" seed="study-empty" weave className="absolute inset-0" />
       </CardMedia>
       <div className="flex flex-col gap-1 px-6 pt-5">
-        <h2 className="font-medium text-lg tracking-title">Nothing to study yet</h2>
+        <h2 className="font-medium text-base tracking-title">Nothing to study yet</h2>
         <p className="text-muted-foreground text-sm">
           {noCourses ? "Import a course to make flashcards and practice quizzes from its materials." : "Make flashcards or a practice quiz from your course materials. Each one is checked against them."}
         </p>

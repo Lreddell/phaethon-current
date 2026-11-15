@@ -82,6 +82,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
     busy,
   };
 
+  const isHidden = (c: CourseInfo) => partsOf(access.data, space.id, c.key).length === 0;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Header />
@@ -110,7 +111,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
             <div className="flex h-14 shrink-0 items-center gap-2 px-4">
               <h2 className="flex-1 font-medium text-lg tracking-title">Courses</h2>
               <Tooltip>
-                <TooltipTrigger render={<Button size="icon-sm" aria-label="Connect a course site" onClick={() => setConnect(true)} />}>
+                <TooltipTrigger render={<Button size="icon-sm" variant="ghost-muted" aria-label="Connect a course site" onClick={() => setConnect(true)} />}>
                   <Icon icon={icons.add} />
                 </TooltipTrigger>
                 <TooltipPopup>Connect a course site</TooltipPopup>
@@ -139,9 +140,17 @@ export function CoursesView({ space }: { space: SpaceView }) {
                       {!isFolded ? (
                         <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.16 }} className="overflow-hidden">
                           <div className="ml-4 flex flex-col border-l pl-2">
-                            {list.map((c) => (
+                            {list.filter((c) => !isHidden(c)).map((c) => (
                               <CourseRow key={c.key} space={space.id} course={c} selected={open?.key === c.key} onOpen={() => setOpenKey(c.key)} />
                             ))}
+                            {list.some(isHidden) ? (
+                              <>
+                                <p className="mt-2 flex h-6 items-center px-2 text-2xs text-subtle-foreground">Hidden from this space</p>
+                                {list.filter(isHidden).map((c) => (
+                                  <CourseRow key={c.key} space={space.id} course={c} selected={open?.key === c.key} onOpen={() => setOpenKey(c.key)} />
+                                ))}
+                              </>
+                            ) : null}
                             {!g.courses.length && g.connection?.signedIn ? (
                               <button
                                 type="button"
@@ -190,7 +199,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
                 {...actions}
               />
             ) : (
-              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-8 pt-10">
+              <div className="page-scroll flex min-h-0 flex-1 flex-col px-8 pt-10">
                 {run ? (
                   <div className="mx-auto max-w-(--page-max-width)">
                     <ImportRun run={run} onSignInAgain={() => runConnection && signInAgain(runConnection)} />
@@ -274,7 +283,7 @@ function CourseRow({ space, course, selected, onOpen }: { space: string; course:
       aria-current={selected ? "true" : undefined}
       onClick={onOpen}
       className={cn(
-        "flex h-8 min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+        "flex h-7 min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
         selected && "bg-row-selected hover:bg-row-selected",
       )}
     >

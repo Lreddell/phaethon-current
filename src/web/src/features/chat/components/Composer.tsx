@@ -32,9 +32,9 @@ const drafts = new Map<string, string>();
 const stashes = new Map<string, { files: File[]; kept: Attachment[] }>();
 const pending = (file: File): Pending => ({ id: `${file.name}-${file.size}-${Math.random()}`, file, previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined });
 
-const TUTOR: { id: TutorMode; label: string; hint: string }[] = [
-  { id: "normal", label: "Normal", hint: "Answers and explains" },
-  { id: "quiz", label: "Quiz me", hint: "Asks questions to check you" },
+const TUTOR: { id: TutorMode; label: string; hint?: string }[] = [
+  { id: "normal", label: "Normal" },
+  { id: "quiz", label: "Quiz me" },
   { id: "explain", label: "Explain it back", hint: "You teach it, it corrects you" },
   { id: "socratic", label: "Socratic", hint: "Leads with questions, never the answer" },
   { id: "cram", label: "Exam cram", hint: "Fast review of what’s on the exam" },
@@ -79,7 +79,7 @@ function TutorPicker({ mode, setMode, disabled }: { mode: TutorMode; setMode: (m
               <MenuRadioItem key={t.id} value={t.id} className="items-start gap-2 py-1.5">
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="text-sm">{t.label}</span>
-                  <span className="truncate text-muted-foreground text-xs">{t.hint}</span>
+                  {t.hint ? <span className="truncate text-muted-foreground text-xs">{t.hint}</span> : null}
                 </span>
                 <MenuRadioItemIndicator className="mt-0.5" />
               </MenuRadioItem>
@@ -304,7 +304,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
         </div>
       ) : null}
       <div
-        className={cn("relative rounded-card border bg-card shadow-card transition-[border-color,box-shadow] focus-within:border-border-strong", dragging && "border-primary/60 ring-2 ring-primary/15")}
+        className={cn("relative rounded-card border bg-card transition-[border-color,box-shadow] focus-within:border-border-strong", dragging && "border-primary/60 ring-2 ring-primary/15")}
         onDragOver={(e) => {
           if (!e.dataTransfer.types.includes("Files")) return;
           e.preventDefault();
@@ -392,7 +392,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
         />
         <div className="flex items-center gap-1.5 px-3 pb-3">
           <Tooltip>
-            <TooltipTrigger render={<Button variant="outline" size="icon-sm" aria-label="Attach files" onClick={() => picker.current?.click()} disabled={busy} className="size-8 sm:size-8" />}>
+            <TooltipTrigger render={<Button variant="ghost-muted" size="icon-sm" aria-label="Attach files" onClick={() => picker.current?.click()} disabled={busy} />}>
               <Icon icon={icons.attach} className="size-4" />
             </TooltipTrigger>
             <TooltipPopup>Attach files · images, PDFs, Word, text</TooltipPopup>
@@ -413,7 +413,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
               {busy ? (
                 <motion.span key="stop" initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.6, opacity: 0 }} transition={{ type: "spring", duration: 0.25, bounce: 0.3 }} className="inline-flex">
                   <Tooltip>
-                    <TooltipTrigger render={<button type="button" aria-label="Stop" onClick={() => void chats().stop(space.id)} className="inline-flex size-8 items-center justify-center rounded-full bg-ink text-ink-foreground transition-opacity hover:opacity-85" />}>
+                    <TooltipTrigger render={<button type="button" aria-label="Stop" onClick={() => void chats().stop(space.id)} className="inline-flex size-7 items-center justify-center rounded-full bg-ink text-ink-foreground transition-opacity hover:opacity-85" />}>
                       <span className="size-2.5 rounded-xs bg-current" />
                     </TooltipTrigger>
                     <TooltipPopup>Stop</TooltipPopup>
@@ -431,7 +431,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
                   exit={{ scale: 0.6, opacity: 0, y: -6 }}
                   whileTap={canSend ? { scale: 0.88 } : undefined}
                   transition={{ type: "spring", duration: 0.25, bounce: 0.3 }}
-                  className="inline-flex size-8 items-center justify-center rounded-full bg-ink text-ink-foreground shadow-card transition-colors hover:bg-ink/86 disabled:bg-primary/30 disabled:text-primary-foreground disabled:shadow-none dark:disabled:bg-primary/15 dark:disabled:text-primary/60"
+                  className="inline-flex size-7 items-center justify-center rounded-full bg-ink text-ink-foreground transition-colors hover:bg-ink/86 disabled:bg-primary/30 disabled:text-primary-foreground disabled:shadow-none dark:disabled:bg-primary/15 dark:disabled:text-primary/60"
                 >
                   <Icon icon={icons.send} className="size-4" />
                 </motion.button>

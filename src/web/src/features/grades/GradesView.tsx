@@ -3,16 +3,15 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
 import { Header } from "@/app/Header";
 import { useNav } from "@/app/store";
-import { ArtCanvas } from "@/components/art";
 import { cleanMessage, SurfaceError } from "@/components/errors";
 import { Icon, type IconData } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { Truncate } from "@/components/truncate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardMedia, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
+import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { BarLegend, StackedBar } from "@/components/ui/stacked-bar";
@@ -147,7 +146,7 @@ export function GradesView({ space }: { space: SpaceView }) {
           ) : null
         }
       />
-      <div className="relative min-h-0 flex-1 overflow-y-auto" data-testid="grades-scroll">
+      <div className="page-scroll relative min-h-0 flex-1" data-testid="grades-scroll">
         <AnimatePresence initial={false}>
           {refresh ? (
             <motion.div
@@ -184,19 +183,7 @@ export function GradesView({ space }: { space: SpaceView }) {
           ) : null}
           {data?.length ? (
             <>
-              {!one ? (
-                <div className="-mb-3 flex min-w-0 items-center gap-3 overflow-x-auto">
-                  <SegmentedControl aria-label="Course" value={focused ? courseId(focused) : ALL} onValueChange={setFocus}>
-                    <SegmentedControlItem value={ALL}>All courses</SegmentedControlItem>
-                    {data.map((c) => (
-                      <SegmentedControlItem key={courseId(c)} value={courseId(c)} className="max-w-48">
-                        <span className="truncate">{c.course}</span>
-                      </SegmentedControlItem>
-                    ))}
-                  </SegmentedControl>
-                </div>
-              ) : null}
-              {focused ? <CourseOverview course={focused} now={now} refreshing={refresh?.course === focused.course} /> : <TermOverview courses={data} refreshing={refresh?.course} onPick={(c) => setFocus(courseId(c))} />}
+              {focused ? <CourseOverview course={focused} now={now} refreshing={refresh?.course === focused.course} onBack={one ? undefined : () => setFocus(ALL)} /> : <TermOverview courses={data} refreshing={refresh?.course} onPick={(c) => setFocus(courseId(c))} />}
               {withItems.length ? <Attention courses={withItems} fresh={fresh} now={now} /> : null}
               {focused && focused.items.length ? <CourseCharts course={focused} now={now} /> : null}
               {focused && !focused.items.length ? null : <AllTables courses={scope} fresh={fresh} now={now} />}
@@ -224,14 +211,6 @@ const jump = (c: CourseGradeView) => document.getElementById(courseId(c))?.scrol
 const rounded = (d: number) => Math.round(d * 10) / 10;
 const plural = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 
-/** The one art surface of the page: a meadow strip across the top of the overview card. */
-function OverviewMedia({ seed }: { seed: string }) {
-  return (
-    <CardMedia className="h-20">
-      <ArtCanvas palette="meadow" seed={seed} weave className="absolute inset-0" />
-    </CardMedia>
-  );
-}
 
 // ---- All courses at a glance ----
 
@@ -240,16 +219,14 @@ function TermOverview({ courses, refreshing, onPick }: { courses: CourseGradeVie
   const graded = heads.reduce((n, h) => n + h.graded, 0);
   const open = heads.reduce((n, h) => n + h.open, 0);
   return (
-    <Card data-testid="grades-courses">
-      <OverviewMedia seed="grades-term" />
-      <CardHeader>
-        <CardTitle>This term</CardTitle>
-        <CardDescription className="tabular-nums">
-          {plural(courses.length, "course")} · {graded} graded · {open} still open
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3">
+    <section data-testid="grades-courses" className="flex flex-col gap-4">
+      <div className="flex flex-col gap-0.5">
+        <h1 className="font-medium text-lg tracking-title">Grades</h1>
+        <p className="text-muted-foreground text-sm tabular-nums">
+          This term · {plural(courses.length, "course")} · {graded} graded · {open} still open
+        </p>
+      </div>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3">
           {heads.map((h) => {
             const c = h.course;
             const moved = h.trend && Math.abs(h.trend.delta) >= 0.05 ? rounded(h.trend.delta) : undefined;
@@ -276,29 +253,32 @@ function TermOverview({ courses, refreshing, onPick }: { courses: CourseGradeVie
             );
           })}
         </div>
-      </CardContent>
-    </Card>
+    </section>
   );
 }
 
 // ---- One course at a glance ----
 
-function CourseOverview({ course, now, refreshing }: { course: CourseGradeView; now: number; refreshing: boolean }) {
+function CourseOverview({ course, now, refreshing, onBack }: { course: CourseGradeView; now: number; refreshing: boolean; onBack?: () => void }) {
   const h = courseHead(course);
   const s = courseStats(course, now);
   const up = h.trend && h.trend.delta >= 0.05;
   const down = h.trend && h.trend.delta <= -0.05;
   return (
     <Card data-testid="grades-courses">
-      <OverviewMedia seed={courseId(course)} />
       <div className="flex items-start gap-4 px-5 pt-5 pb-4">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <CardTitle className="flex min-w-0 items-center gap-2">
+          <h1 className="flex min-w-0 items-center gap-1.5 font-medium text-lg tracking-title">
+            {onBack ? (
+              <Button size="icon-xs" variant="ghost-muted" aria-label="All courses" className="-ml-1" onClick={onBack}>
+                <Icon icon={icons.arrowLeft} />
+              </Button>
+            ) : null}
             <Truncate className="min-w-0">{course.course}</Truncate>
-            {refreshing ? <Spinner size="sm" tone="muted" /> : null}
-          </CardTitle>
-          <CardDescription className="tabular-nums">
+          </h1>
+          <CardDescription className="flex items-center gap-2 tabular-nums">
             {s.graded} of {s.total} graded · updated {relativeTime(course.updated).toLowerCase()}
+            {refreshing ? <Spinner size="xs" tone="muted" /> : null}
           </CardDescription>
         </div>
         {h.percent != null ? (
@@ -370,13 +350,15 @@ function CourseCharts({ course, now }: { course: CourseGradeView; now: number })
       <Card>
         <div className="flex items-center gap-3 px-5 pt-5 pb-3">
           <CardTitle className="min-w-0 flex-1">Trend</CardTitle>
-          <SegmentedControl variant="outline" aria-label="Range" value={range} onValueChange={setRange}>
+          <Tabs value={range} onValueChange={setRange}>
+<TabsList aria-label="Range">
             {RANGES.map((r) => (
-              <SegmentedControlItem key={r.value} value={r.value} className="min-w-10 px-2.5 text-xs">
+              <TabsTab key={r.value} value={r.value} className="min-w-10 px-2.5 text-xs">
                 {r.label}
-              </SegmentedControlItem>
+              </TabsTab>
             ))}
-          </SegmentedControl>
+          </TabsList>
+</Tabs>
         </div>
         <CardContent>
           <TrendChart points={shown} current={courseHead(course).percent} />
@@ -562,18 +544,20 @@ function AllTables({ courses, fresh, now }: { courses: CourseGradeView[]; fresh:
   return (
     <section className="flex flex-col gap-3" aria-label="All grades">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="mr-auto font-medium text-lg tracking-title">{courses.length > 1 ? "All grades" : "Assignments"}</h2>
+        <h2 className="mr-auto font-medium text-base tracking-title">{courses.length > 1 ? "All grades" : "Assignments"}</h2>
         <div className="relative w-56 max-sm:w-full">
           <Icon icon={icons.search} className="-translate-y-1/2 pointer-events-none absolute top-1/2 left-2.5 z-10 size-3.5 text-muted-foreground" />
           <Input size="sm" value={query} placeholder="Filter assignments" aria-label="Filter assignments" className="*:data-[slot=input]:ps-8" onChange={(e) => setQuery(e.target.value)} />
         </div>
-        <SegmentedControl aria-label="Show" value={status} onValueChange={setStatus}>
+        <Tabs value={status} onValueChange={setStatus}>
+<TabsList aria-label="Show">
           {STATUS.map((s) => (
-            <SegmentedControlItem key={s.value} value={s.value} className="px-2.5 text-xs">
+            <TabsTab key={s.value} value={s.value} className="px-2.5 text-xs">
               {s.label}
-            </SegmentedControlItem>
+            </TabsTab>
           ))}
-        </SegmentedControl>
+        </TabsList>
+</Tabs>
         {matching.length > 1 ? (
           <Button size="sm" variant="ghost-muted" onClick={() => setClosed(allClosed ? {} : Object.fromEntries(courses.map((c) => [courseId(c), true])))}>
             {allClosed ? "Expand all" : "Collapse all"}
@@ -647,7 +631,7 @@ function CourseTable({
 
   return (
     // Not a Card: the card's clipping would stop the header from sticking.
-    <section id={id} className="scroll-mt-3 rounded-card border bg-card shadow-card" data-testid="grades-course">
+    <section id={id} className="scroll-mt-3 rounded-card border bg-card" data-testid="grades-course">
       <div className={cn("sticky top-0 z-10 flex h-13 items-center gap-2 rounded-t-card bg-card/95 px-3 backdrop-blur-sm", open ? "border-b" : "rounded-b-card")}>
         <button type="button" onClick={onToggle} aria-expanded={open} className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring">
           <motion.span animate={{ rotate: open ? 0 : -90 }} transition={{ duration: 0.15, ease: EASE }} className="flex shrink-0 text-muted-foreground">

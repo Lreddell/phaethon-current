@@ -3,7 +3,6 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
 import { Header } from "@/app/Header";
 import { useNav } from "@/app/store";
-import { ArtCanvas } from "@/components/art";
 import { cleanMessage, FieldError, SurfaceError } from "@/components/errors";
 import { Icon, type IconData } from "@/components/icon";
 import { icons } from "@/components/icons";
@@ -11,12 +10,12 @@ import { toast } from "@/components/toast";
 import { Truncate } from "@/components/truncate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardMedia } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverPopup, PopoverTrigger } from "@/components/ui/popover";
-import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
+import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -89,8 +88,10 @@ export function PlanView({ space }: { space: SpaceView }) {
     }
   };
   const setExams = async (exams: PlanExam[]) => {
-    const saved = await planExamsSet(space.id, exams);
-    data.setData((x) => x && { ...x, exams: saved });
+    // Detected exams are the course's, not ours to save; the core lists them again with the saved ones.
+    const saved = await planExamsSet(space.id, exams.filter((e) => !e.detected));
+    const detected = (await planExamsGet(space.id)).filter((e) => e.detected);
+    data.setData((x) => x && { ...x, exams: [...saved, ...detected] });
   };
   const removeExam = async (e: PlanExam) => {
     if (!d) return;
@@ -104,7 +105,8 @@ export function PlanView({ space }: { space: SpaceView }) {
   };
   const saveExam = async (x: PlanExam) => {
     if (!d) return;
-    await setExams(x.id ? d.exams.map((y) => (y.id === x.id ? x : y)) : [...d.exams, { ...x, id: `e${Date.now().toString(36)}` }]);
+    const own = x.id && !x.id.startsWith("found:");
+    await setExams(own ? d.exams.map((y) => (y.id === x.id ? x : y)) : [...d.exams, { ...x, id: `e${Date.now().toString(36)}`, detected: undefined }]);
     toast.success(x.id ? `Saved ${x.title}` : `Added ${x.title}`);
     setEditing(null);
   };
@@ -144,7 +146,7 @@ export function PlanView({ space }: { space: SpaceView }) {
           ) : null
         }
       />
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="page-scroll min-h-0 flex-1">
         <div className="@container/page mx-auto flex min-h-full w-full max-w-(--page-wide-max-width) flex-col px-8 pt-10 pb-16 @max-3xl/page:px-6">
           {data.error ? <SurfaceError title="Couldn’t load your plan" message={cleanMessage(data.error)} onRetry={data.reload} /> : null}
           {skeleton ? <PlanSkeleton /> : null}
@@ -255,7 +257,7 @@ function SideRow({ selected, onClick, lead, label, trail }: { selected?: boolean
       type="button"
       aria-pressed={selected}
       onClick={onClick}
-      className={cn("flex h-8 w-full min-w-0 items-center gap-2.5 rounded-md px-2 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring", selected && "bg-row-selected hover:bg-row-selected")}
+      className={cn("flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring", selected && "bg-row-selected hover:bg-row-selected")}
     >
       <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">{lead}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -292,7 +294,7 @@ function Filters({
   const c = counts(all);
   const sorted = [...exams].sort((a, b) => (a.date < b.date ? -1 : 1));
   return (
-    <nav aria-label="Filter the plan" className="flex min-w-0 flex-col @3xl/page:sticky @3xl/page:top-6 @3xl/page:self-start">
+    <nav aria-label="Filter the plan" className="scroll-quiet flex min-w-0 flex-col @3xl/page:sticky @3xl/page:top-0 @3xl/page:max-h-[calc(100dvh-var(--titlebar-height)-2.5rem)] @3xl/page:self-start @3xl/page:overflow-y-auto">
       {/* Narrow pages filter from the bar above the agenda instead. */}
       <div className="flex flex-col @max-3xl/page:hidden">
         <SideLabel>Show</SideLabel>
@@ -327,19 +329,22 @@ function Filters({
             transition={{ duration: 0.18 }}
             className={cn("group relative flex min-h-12 items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-accent", e.date < today && "opacity-60")}
           >
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground shadow-card">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground">
               <Icon icon={icons.flag} className="size-4" />
             </span>
             <button type="button" onClick={() => onEditExam(e)} className="flex min-w-0 flex-1 flex-col text-left outline-none after:absolute after:inset-0 focus-visible:after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring" aria-label={`Edit ${e.title}`}>
               <Truncate className="text-sm">{e.title}</Truncate>
               <span className="truncate text-muted-foreground text-xs tabular-nums">
                 {shortDay(e.date)} · {relDay(e.date, today).toLowerCase()}
+                {e.detected ? " · from the course" : ""}
               </span>
             </button>
-            <span className="size-1.5 shrink-0 rounded-full group-focus-within:hidden group-hover:hidden" style={{ backgroundColor: e.course ? colors.get(e.course) : "var(--primary)" }} />
-            <Button size="icon-xs" variant="ghost-destructive" aria-label={`Remove ${e.title}`} className="relative z-10 hidden group-focus-within:inline-flex group-hover:inline-flex" onClick={() => onRemoveExam(e)}>
-              <Icon icon={icons.delete} />
-            </Button>
+            <span className={cn("size-1.5 shrink-0 rounded-full", !e.detected && "group-focus-within:hidden group-hover:hidden")} style={{ backgroundColor: e.course ? colors.get(e.course) : "var(--primary)" }} />
+            {e.detected ? null : (
+              <Button size="icon-xs" variant="ghost-destructive" aria-label={`Remove ${e.title}`} className="relative z-10 hidden group-focus-within:inline-flex group-hover:inline-flex" onClick={() => onRemoveExam(e)}>
+                <Icon icon={icons.delete} />
+              </Button>
+            )}
           </motion.div>
         ))}
       </AnimatePresence>
@@ -358,13 +363,15 @@ function Filters({
 function FilterBar({ filter, onFilter, colors }: { filter: Filter; onFilter: (f: Filter) => void; colors: Map<string, string> }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2 @3xl/page:hidden" data-testid="plan-filter-bar">
-      <SegmentedControl aria-label="Show" value={filter.show} onValueChange={(v) => onFilter({ ...filter, show: v as Show })}>
+      <Tabs value={filter.show} onValueChange={(v: Show) => onFilter({ ...filter, show: v })}>
+<TabsList aria-label="Show">
         {SHOW.map((s) => (
-          <SegmentedControlItem key={s.value} value={s.value} className="px-2.5 text-xs">
+          <TabsTab key={s.value} value={s.value} className="px-2.5 text-xs">
             {s.value === "session" ? "Sessions" : s.label}
-          </SegmentedControlItem>
+          </TabsTab>
         ))}
-      </SegmentedControl>
+      </TabsList>
+</Tabs>
       {[...colors].map(([name, color]) => {
         const on = filter.course === name;
         return (
@@ -395,7 +402,7 @@ function ScheduleSettings({ state, onState }: { state: PlanState; onState: (s: P
           <button type="button" className="flex min-h-12 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-accent" />
         }
       >
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground shadow-card">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground">
           <Icon icon={icons.mode} className="size-4" />
         </span>
         <span className="flex min-w-0 flex-1 flex-col">
@@ -445,13 +452,15 @@ function ScheduleSettings({ state, onState }: { state: PlanState; onState: (s: P
           </div>
           <div className="flex items-center justify-between gap-3">
             <span className="font-medium text-sm">Minutes each</span>
-            <SegmentedControl aria-label="Minutes each" value={String(state.sessionMinutes)} onValueChange={(v) => onState({ ...state, sessionMinutes: Number(v) })}>
+            <Tabs value={String(state.sessionMinutes)} onValueChange={(v: string) => onState({ ...state, sessionMinutes: Number(v) })}>
+<TabsList aria-label="Minutes each">
               {[15, 25, 45, 60].map((m) => (
-                <SegmentedControlItem key={m} value={String(m)} className="min-w-0 px-2.5 text-xs tabular-nums">
+                <TabsTab key={m} value={String(m)} className="min-w-0 px-2.5 text-xs tabular-nums">
                   {m}
-                </SegmentedControlItem>
+                </TabsTab>
               ))}
-            </SegmentedControl>
+            </TabsList>
+</Tabs>
           </div>
         </div>
       </PopoverPopup>
@@ -488,9 +497,6 @@ function Today({
   const study = entries.length - due;
   return (
     <Card data-testid="plan-today">
-      <CardMedia className="h-20">
-        <ArtCanvas palette="dawn" seed={`plan-${today}`} weave className="absolute inset-0" />
-      </CardMedia>
       <div className="flex items-start gap-4 px-5 pt-5 pb-3">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <h2 className="font-medium text-base tracking-title">
@@ -674,7 +680,7 @@ function ExamForm({ draft, courses, onSave, onCancel, onDelete }: { draft: Draft
       }}
     >
       <div className="flex items-center gap-3 border-b px-5 pt-5 pb-4">
-        <h2 className="min-w-0 flex-1 font-medium text-lg tracking-title">{draft.id ? "Edit exam" : "Add exam"}</h2>
+        <h2 className="min-w-0 flex-1 font-medium text-base tracking-title">{draft.id ? "Edit exam" : "Add exam"}</h2>
         <Button size="icon-xs" variant="ghost-muted" aria-label="Close" onClick={onCancel}>
           <Icon icon={icons.close} />
         </Button>

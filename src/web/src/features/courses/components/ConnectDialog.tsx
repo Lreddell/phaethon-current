@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { ArtCanvas } from "@/components/art";
 import { cleanMessage, FieldError, RowError } from "@/components/errors";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
@@ -113,23 +112,8 @@ export function ConnectDialog({
           <>
             <DialogHeader>
               <DialogTitle>Connect a course site</DialogTitle>
-              <DialogDescription>Bring your courses’ files, assignments and grades into Phaethon.</DialogDescription>
             </DialogHeader>
             <DialogPanel className="flex flex-col gap-5">
-              <ArtCanvas palette="lilac" seed="connect-site" className="h-36 rounded-xl">
-                <div className="flex size-full flex-col items-center justify-center gap-2">
-                  {[
-                    { icon: icons.file, text: "Files, readings and lecture notes" },
-                    { icon: icons.quiz, text: "Assignments and due dates" },
-                    { icon: icons.grades, text: "Grades as they’re posted" },
-                  ].map((p, i) => (
-                    <span key={p.text} className={cn("flex h-8 items-center gap-2 rounded-full bg-card/92 px-3.5 text-foreground text-xs shadow-card", i === 0 ? "-translate-x-6" : i === 2 ? "translate-x-6" : "")}>
-                      <Icon icon={p.icon} className="size-3.5 text-muted-foreground" />
-                      {p.text}
-                    </span>
-                  ))}
-                </div>
-              </ArtCanvas>
               <div className="flex flex-col gap-1">
                 <h3 className="px-1 pb-1 font-medium text-sm">Which one does your school use?</h3>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-1">
@@ -150,7 +134,7 @@ export function ConnectDialog({
                       }}
                       className="group flex min-h-14 min-w-0 items-center gap-3 rounded-xl px-1.5 py-2 text-left outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-xl border bg-card font-medium text-foreground text-sm tracking-tight shadow-card">
+                      <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-xl border bg-card font-medium text-foreground text-sm tracking-tight">
                         {MONOGRAM[k.kind]}
                       </span>
                       <span className="min-w-0 flex-1">
@@ -162,7 +146,7 @@ export function ConnectDialog({
                           <Icon icon={icons.check} className="size-4" />
                         </span>
                       ) : (
-                        <span aria-hidden className="flex size-7 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground shadow-card transition-colors group-hover:text-foreground">
+                        <span aria-hidden className="flex size-7 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground transition-colors group-hover:text-foreground">
                           <Icon icon={icons.add} className="size-3.5" />
                         </span>
                       )}

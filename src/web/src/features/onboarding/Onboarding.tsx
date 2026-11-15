@@ -4,7 +4,6 @@ import { api, type SpaceView } from "@/app/api";
 import { HUES } from "@/app/NewSpaceDialog";
 import { useNav } from "@/app/store";
 import { ArtCanvas, type ArtPalette } from "@/components/art";
-import { BrandMark } from "@/components/brand-mark";
 import { cleanMessage, FieldError, RowError } from "@/components/errors";
 import { Icon, type IconData } from "@/components/icon";
 import { icons } from "@/components/icons";
@@ -95,11 +94,10 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
     <main className="@container/onboarding relative flex h-full bg-background">
       <div aria-hidden className="app-drag absolute inset-x-0 top-0 h-(--titlebar-height)" />
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex h-24 shrink-0 items-end justify-center gap-2 pb-2">
-          <BrandMark className="size-5 text-foreground" />
-          <span className="font-medium text-lg tracking-title">Phaethon</span>
+        <div className="flex h-24 shrink-0 items-end justify-center pb-2">
+          <span className="font-medium text-base tracking-title">Phaethon</span>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="page-scroll min-h-0 flex-1">
           <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-start px-6 pt-(--onboarding-top) pb-16">
             <Dots step={step} />
             <AnimatePresence mode="wait" initial={false}>
@@ -182,7 +180,7 @@ function Welcome({ onNext }: { onNext: () => void }) {
   return (
     <section>
       <Title sub="An assistant that keeps each part of your life in its own space.">Welcome to Phaethon</Title>
-      <ul className="divide-y overflow-hidden rounded-card border bg-card shadow-card">
+      <ul className="divide-y overflow-hidden rounded-card border bg-card">
         {FEATURES.map((f) => (
           <li key={f.title} className="flex items-center gap-4 px-4 py-3.5">
             <Icon icon={f.icon} className="size-5 text-muted-foreground" />
@@ -280,7 +278,7 @@ function quietFocus(el: HTMLButtonElement | null) {
 
 function Choice({ icon, title, text, on, onClick, children }: { icon: ReactNode; title: string; text: string; on: boolean; onClick: () => void; children: ReactNode }) {
   return (
-    <div className={cn("overflow-hidden rounded-card border bg-card shadow-card transition-[border-color,box-shadow] duration-150", on ? "border-primary ring-1 ring-primary" : "hover:border-border-strong")}>
+    <div className={cn("overflow-hidden rounded-card border bg-card transition-[border-color,box-shadow] duration-150", on ? "border-primary ring-1 ring-primary" : "hover:border-border-strong")}>
       <button type="button" aria-expanded={on} onClick={onClick} className="flex w-full items-center gap-3 px-4 py-3.5 text-left outline-none focus-visible:bg-accent">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground [&_svg]:size-4.5">{icon}</span>
         <span className="min-w-0 flex-1">
@@ -550,7 +548,7 @@ function FirstSpace({ draft, patch, onBack, onDone }: { draft: Draft; patch: (p:
       ) : !spaces ? (
         showSkeleton ? <SkeletonRows count={2} withIcon /> : <div className="h-15" />
       ) : existing ? (
-        <div className="flex max-h-60 flex-col overflow-y-auto rounded-card border bg-card p-1.5 shadow-card">
+        <div className="flex max-h-60 flex-col overflow-y-auto rounded-card border bg-card p-1.5">
           {spaces.map((s) => (
             <div key={s.id} className="flex h-10 items-center gap-3 rounded-lg px-2.5">
               <SpaceAvatar name={s.name} hue={s.hue} className="size-6 rounded-md text-2xs" />
@@ -586,7 +584,7 @@ function FirstSpace({ draft, patch, onBack, onDone }: { draft: Draft; patch: (p:
             </div>
             <FieldError>{error}</FieldError>
           </div>
-          <div className="rounded-card border bg-card px-4 shadow-card">
+          <div className="rounded-card border bg-card px-4">
             <ToggleRow title="Study tools" description="Courses, flashcards, quizzes, grades and a study plan." checked={draft.edu} onCheckedChange={(edu) => patch({ edu })} />
           </div>
         </div>

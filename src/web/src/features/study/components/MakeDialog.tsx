@@ -10,10 +10,10 @@ import { Truncate } from "@/components/truncate";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Dialog, DialogClose, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogClose, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
+import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -279,12 +279,7 @@ export function MakeDialog({
         <form onSubmit={onSubmit} className="contents">
           <DialogHeader className="gap-4 p-6 pr-6 pb-4">
             <div className="flex items-start gap-3">
-              <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <DialogTitle className="font-medium text-lg tracking-title">{label}</DialogTitle>
-                <DialogDescription className="text-muted-foreground text-sm">
-                  {quiz ? "Practice questions from your course materials, each checked against them." : "Flashcards from your course materials, each tied to its passage."}
-                </DialogDescription>
-              </div>
+              <DialogTitle className="min-w-0 flex-1 font-medium text-base tracking-title">{label}</DialogTitle>
               <DialogClose render={<Button size="icon-sm" variant="ghost-muted" aria-label="Close" className="-mt-1 -mr-2" />}>
                 <Icon icon={icons.close} />
               </DialogClose>
@@ -293,16 +288,18 @@ export function MakeDialog({
             <div className="flex h-8 items-center justify-between gap-3">
               <Steps step={step} done={phase === "done"} onStep={(i) => (i === 0 && phase === "how" ? go("what", -1) : undefined)} labels={["What", quiz ? "Questions" : "Cards", "Make"]} />
               {phase === "what" || phase === "how" ? (
-                <SegmentedControl aria-label="Kind" value={draft.kind} onValueChange={(k: MakeKind) => patch({ kind: k, count: emptyDraft(k).count })}>
-                  <SegmentedControlItem value="quiz">
+                <Tabs value={draft.kind} onValueChange={(k: MakeKind) => patch({ kind: k, count: emptyDraft(k).count })}>
+<TabsList aria-label="Kind">
+                  <TabsTab value="quiz">
                     <Icon icon={icons.quiz} />
                     Quiz
-                  </SegmentedControlItem>
-                  <SegmentedControlItem value="deck">
+                  </TabsTab>
+                  <TabsTab value="deck">
                     <Icon icon={icons.deck} />
                     Cards
-                  </SegmentedControlItem>
-                </SegmentedControl>
+                  </TabsTab>
+                </TabsList>
+</Tabs>
               ) : null}
             </div>
           </DialogHeader>
@@ -562,7 +559,7 @@ function CoursePicker({ sources, value, onChange, invalid }: { sources: CourseSo
             render={<button type="button" />}
             className="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-well text-left outline-none transition-[border-color,box-shadow] duration-150 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring data-checked:border-primary data-checked:ring-1 data-checked:ring-primary"
           >
-            <span className="flex min-h-20 flex-col gap-2 rounded-b-xl border-b border-border/70 bg-card px-3 py-2.5">
+            <span className="flex h-20 flex-col gap-2 rounded-b-xl border-b border-border/70 bg-card px-3 py-2.5">
               <span className="flex items-center justify-between gap-2">
                 <Icon icon={icons.courses} className="size-4 text-muted-foreground" />
                 <span className="flex size-4 shrink-0 items-center justify-center rounded-full border border-input transition-colors group-data-checked:border-primary group-data-checked:bg-primary">
@@ -650,15 +647,17 @@ function WhatStep({
       </Field>
 
       <Field label="For">
-        <SegmentedControl aria-label="For" className="w-full" value={draft.target} onValueChange={(t: MakeDraft["target"]) => patch({ target: t })}>
-          <SegmentedControlItem value="exam" className="flex-1">
+        <Tabs value={draft.target} onValueChange={(t: MakeDraft["target"]) => patch({ target: t })} className="w-full">
+<TabsList aria-label="For" className="w-full">
+          <TabsTab value="exam" className="flex-1">
             <Icon icon={icons.goal} />A test
-          </SegmentedControlItem>
-          <SegmentedControlItem value="topics" className="flex-1">
+          </TabsTab>
+          <TabsTab value="topics" className="flex-1">
             <Icon icon={icons.read} />
             Topics
-          </SegmentedControlItem>
-        </SegmentedControl>
+          </TabsTab>
+        </TabsList>
+</Tabs>
       </Field>
 
       {draft.target === "exam" ? (
@@ -723,7 +722,7 @@ function WhatStep({
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          <Input aria-label="Topics" placeholder="e.g. induction proofs, power sets (empty for anything)" value={draft.focus} onChange={(e) => patch({ focus: e.target.value })} />
+          <Input aria-label="Topics" placeholder="e.g. induction proofs, power sets" value={draft.focus} onChange={(e) => patch({ focus: e.target.value })} />
           {suggestions.topics.length ? <Chips items={suggestions.topics} value={draft.focus} onChange={(focus) => patch({ focus })} /> : null}
         </div>
       )}
@@ -947,13 +946,15 @@ function HowStep({
       <div className={cn("grid gap-4", quiz && "grid-cols-2")}>
         <Field label="How many" hint={errs.count ? undefined : `Up to ${MAX_COUNT[draft.kind]}`}>
           <div className="flex items-center gap-2">
-            <SegmentedControl aria-label="How many" value={preset} onValueChange={(v: string) => patch({ count: Number(v) })} className="min-w-0 flex-1">
+            <Tabs value={preset} onValueChange={(v: string) => patch({ count: Number(v) })} className="min-w-0 flex-1">
+<TabsList aria-label="How many" className="w-full">
               {sizes.map((n) => (
-                <SegmentedControlItem key={n} value={String(n)} className="min-w-0 flex-1 px-1 tabular-nums">
+                <TabsTab key={n} value={String(n)} className="min-w-0 flex-1 px-1 tabular-nums">
                   {n}
-                </SegmentedControlItem>
+                </TabsTab>
               ))}
-            </SegmentedControl>
+            </TabsList>
+</Tabs>
             <Input
               aria-label="Exact number"
               inputMode="numeric"
@@ -967,17 +968,19 @@ function HowStep({
         </Field>
         {quiz ? (
           <Field label="Difficulty">
-            <SegmentedControl aria-label="Difficulty" className="w-full" value={draft.difficulty} onValueChange={(d: MakeDraft["difficulty"]) => patch({ difficulty: d })}>
-              <SegmentedControlItem value="easier" className="min-w-0 flex-1 px-1">
+            <Tabs value={draft.difficulty} onValueChange={(d: MakeDraft["difficulty"]) => patch({ difficulty: d })} className="w-full">
+<TabsList aria-label="Difficulty" className="w-full">
+              <TabsTab value="easier" className="min-w-0 flex-1 px-1">
                 Easier
-              </SegmentedControlItem>
-              <SegmentedControlItem value="exam" className="min-w-0 flex-1 px-1">
+              </TabsTab>
+              <TabsTab value="exam" className="min-w-0 flex-1 px-1">
                 Like the test
-              </SegmentedControlItem>
-              <SegmentedControlItem value="harder" className="min-w-0 flex-1 px-1">
+              </TabsTab>
+              <TabsTab value="harder" className="min-w-0 flex-1 px-1">
                 Harder
-              </SegmentedControlItem>
-            </SegmentedControl>
+              </TabsTab>
+            </TabsList>
+</Tabs>
           </Field>
         ) : null}
       </div>
@@ -1133,7 +1136,7 @@ function DoneView({ done, quiz }: { done: Done; quiz: boolean }) {
   return (
     <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, ease: EASE }} className="flex flex-col gap-4 pb-2">
       <div>
-        <p className="font-medium text-lg tabular-nums tracking-title">{quiz ? `Made a quiz of ${plural(made, "question")}` : `Made ${plural(made, "card")}`}</p>
+        <p className="font-medium text-base tabular-nums tracking-title">{quiz ? `Made a quiz of ${plural(made, "question")}` : `Made ${plural(made, "card")}`}</p>
         <p className="mt-0.5 text-muted-foreground text-sm [overflow-wrap:anywhere]">{g?.exam ? `For ${g.exam}${g.scope ? `: ${g.scope}` : ""}.` : "Here’s what went into it."}</p>
       </div>
       <Card variant="well" className="gap-0 px-4 py-2">

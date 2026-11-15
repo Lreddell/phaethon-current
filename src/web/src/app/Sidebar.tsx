@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
-import { ProviderIcon } from "@/components/provider-icon";
 import { cleanMessage, FieldError, RowError } from "@/components/errors";
 import { toast } from "@/components/toast";
 import { AlertDialog, AlertDialogClose, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogPopup, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -15,18 +14,20 @@ import {
   SidebarMenu,
   SidebarMenuBadge,
   SidebarMenuButton,
+  SidebarMenuItem,
   SidebarMenuSkeleton,
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { errorText } from "@/lib/core";
-import { api, type SpaceView } from "./api";
-import { keysFor } from "./shortcuts";
+import type { SpaceView } from "./api";
+import { keysFor, viewKeys } from "./shortcuts";
 import { NewSpaceDialog } from "./NewSpaceDialog";
 import { UpdatePill } from "./UpdatePill";
 import { FilterField, useThreadFilter } from "./sidebar/filter";
 import { foldTitle } from "./sidebar/layout";
 import { SpacesList, type SpacesListHandle } from "./sidebar/SpacesList";
-import { DRAFT, useNav, type ThreadRow } from "./store";
+import { DRAFT, useActiveSpace, useNav, type ThreadRow, type View } from "./store";
+import { VIEWS } from "./views";
 
 /**
  * The left panel (references a163, 3940, 9334): New chat and a filter, then
@@ -113,7 +114,7 @@ function ConfirmDeleteThread({
         }}
       >
         <AlertDialogHeader>
-          <AlertDialogTitle className="text-lg [overflow-wrap:anywhere]">Delete “{shown?.thread.title}”?</AlertDialogTitle>
+          <AlertDialogTitle className="[overflow-wrap:anywhere]">Delete “{shown?.thread.title}”?</AlertDialogTitle>
           <AlertDialogDescription>Its messages are deleted from this space. Files it attached stay. This can’t be undone.</AlertDialogDescription>
           <FieldError>{error}</FieldError>
         </AlertDialogHeader>
@@ -162,47 +163,41 @@ function NewChatRow({ onDown }: { onDown: () => void }) {
   );
 }
 
-const CONNECT_MARKS = ["claude", "openai", "gemini", "mistral", "ollama"];
-
-/**
- * The footer's invitation while no model is set up (a163's "Connect apps"):
- * a short title, one line, the providers' marks. It opens Settings › Providers
- * and goes away once a model answers.
- */
-function ConnectModel() {
-  const openSettings = useNav((s) => s.openSettings);
-  const settingsOpen = useNav((s) => s.settings !== null);
-  const [ready, setReady] = useState(true);
-  useEffect(() => {
-    if (settingsOpen) return;
-    let live = true;
-    void api.settings().then((s) => live && setReady(s.providerReady !== false), () => {});
-    return () => {
-      live = false;
-    };
-  }, [settingsOpen]);
-  if (ready) return null;
-  return (
-    <button
-      type="button"
-      onClick={() => openSettings("providers")}
-      className="flex flex-col items-start gap-1 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-    >
-      <span className="text-foreground text-sm">Connect a model</span>
-      <span className="text-muted-foreground text-xs">Claude, ChatGPT, Gemini, or one that runs on this computer.</span>
-      <span className="mt-1.5 flex items-center gap-2" aria-hidden>
-        {CONNECT_MARKS.map((id) => (
-          <ProviderIcon key={id} id={id} className="size-3.5" />
-        ))}
-        <span className="flex size-3.5 items-center justify-center rounded-full bg-muted text-muted-foreground">
-          <Icon icon={icons.add} className="size-2.5" />
-        </span>
-      </span>
-    </button>
-  );
-}
 
 const NO_SPACE_LIST: SpaceView[] = [];
+
+/** The active space's pages (Study, Grades, Plan, Courses) as rows under the filter, the same rows as everywhere else. */
+function ViewNav() {
+  const space = useActiveSpace();
+  const view = useNav((s) => s.view);
+  const settings = useNav((s) => s.settings !== null);
+  const setView = useNav((s) => s.setView);
+  const retap = useNav((s) => s.retapView);
+  if (!space?.educationEnabled) return null;
+  return (
+    <SidebarMenu aria-label="Views" className="mt-3">
+      {VIEWS.filter((v) => v.edu).map((v) => {
+        const i = VIEWS.findIndex((x) => x.id === v.id);
+        const active = !settings && view === v.id;
+        return (
+          <SidebarMenuItem key={v.id}>
+            <SidebarMenuButton
+              isActive={active}
+              aria-current={active ? "page" : undefined}
+              aria-keyshortcuts={viewKeys(i).aria}
+              onClick={() => (active ? retap(v.id as View) : setView(v.id as View))}
+              className="group/view"
+            >
+              <Icon icon={v.icon} />
+              <span className="flex-1">{v.label}</span>
+              <Keys keys={viewKeys(i).keys} className="opacity-0 transition-opacity group-hover/view:opacity-100" />
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        );
+      })}
+    </SidebarMenu>
+  );
+}
 
 export function Sidebar() {
   const spaces = useNav((s) => s.spaces);
@@ -236,6 +231,7 @@ export function Sidebar() {
             onEnter={() => listRef.current?.openFirst()}
           />
         </div>
+        <ViewNav />
         <SidebarGroupLabel className="mt-4">
           Spaces
           <SidebarGroupAction aria-label="New space" onClick={() => setCreating(true)}>
@@ -257,7 +253,6 @@ export function Sidebar() {
         <SpacesList ref={listRef} spaces={list} query={query} filter={filter} onDelete={onDelete} onExitTop={() => filterRef.current?.focus()} />
       )}
       <SidebarFooter className="gap-0.5">
-        <ConnectModel />
         <UpdatePill />
         <SidebarMenuButton isActive={settingsOpen} aria-keyshortcuts={keysFor("settings").aria} onClick={() => openSettings()} className="group/settings">
           <Icon icon={icons.settings} />
