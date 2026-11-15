@@ -15,11 +15,11 @@ test("the sidebar groups conversations under their spaces", async ({ page }) => 
   await expect(nav.getByRole("button", { name: "Go to School" })).toBeVisible();
   await expect(nav.getByRole("button", { name: "Go to Work" })).toBeVisible();
   await nav.getByRole("button", { name: "Go to Work" }).click();
-  await expect(page.locator("main header")).toContainText("Work");
+  await expect(page.locator("[data-slot=app-header]")).toContainText("Work");
   // Spaces without study tools have no view tabs.
   await expect(page.getByRole("tablist", { name: "Views" })).toHaveCount(0);
   await nav.getByRole("button", { name: "Go to School" }).click();
-  await expect(page.locator("main header")).toContainText("School");
+  await expect(page.locator("[data-slot=app-header]")).toContainText("School");
 });
 
 test("a new space appears, selected, with a field error for an empty name", async ({ page }) => {
@@ -62,6 +62,10 @@ test("first run walks through to the app, keeping the vault's spaces", async ({ 
   // A fresh vault already has School and Work, so the last step offers them.
   await expect(page.getByRole("heading", { level: 1, name: "Your spaces" })).toBeVisible();
   await page.getByRole("button", { name: "Continue" }).click();
+  // The finish step sums up what was set up, then Explore opens the app.
+  await expect(page.getByRole("heading", { level: 1, name: "You’re all set" })).toBeVisible();
+  await expect(page.getByText("Answers with", { exact: false })).toHaveCount(0);
+  await page.getByRole("button", { name: "Explore" }).click();
   await expect(page.getByRole("navigation", { name: "Spaces and conversations" })).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem("phaethon.onboarded"))).toBe("1");
 });

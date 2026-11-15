@@ -1,5 +1,6 @@
 import { animate } from "motion/react";
 import { type ComponentType, lazy, type ReactNode, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { DotMatrix } from "@/components/art";
 import { toast } from "@/components/toast";
 import { ChatView } from "@/features/chat/ChatView";
 import { errorText } from "@/lib/core";
@@ -88,7 +89,7 @@ function Pane({ active, children, name }: { active: boolean; children: ReactNode
     return () => a.stop();
   }, [active]);
   return (
-    <div ref={ref} data-page={name} hidden={!active} className="flex min-h-0 flex-1 flex-col">
+    <div ref={ref} data-page={name} hidden={!active} className="relative flex min-h-0 flex-1 flex-col">
       <ViewActive active={active}>{children}</ViewActive>
     </div>
   );
@@ -140,28 +141,42 @@ function Main() {
   );
 }
 
+/**
+ * The app frame (docs/UI-REBUILD.md › App frame): the window is a soft grey
+ * canvas, and the whole app sits in one white panel inset from its edges,
+ * with a large radius and a hairline. The title bar runs across the top of
+ * the panel; below it the sidebar and the page sit side by side, split by a
+ * hairline, and a faint dot matrix fades in at the top of every page.
+ */
 export function Shell() {
   useShortcuts();
   const sidebarOpen = useNav((s) => s.sidebarOpen);
   const toggleSidebar = useNav((s) => s.toggleSidebar);
   const viewer = useNav((s) => s.viewer);
   return (
-    <SidebarProvider open={sidebarOpen} onToggle={toggleSidebar}>
-      <Sidebar />
-      <HeaderSlots>
-        {(bind) => (
-          <main className="flex min-w-0 flex-1 flex-col bg-background">
-            <AppHeader bind={bind} />
-            <Main />
-          </main>
-        )}
-      </HeaderSlots>
-      {viewer ? (
-        <Suspense fallback={null}>
-          <FileViewer />
-        </Suspense>
-      ) : null}
-      <CommandPalette />
-    </SidebarProvider>
+    <div className="h-full bg-background">
+      <SidebarProvider open={sidebarOpen} onToggle={toggleSidebar} className="flex-col overflow-hidden bg-background">
+        <HeaderSlots>
+          {(bind) => (
+            <>
+              <AppHeader bind={bind} />
+              <div className="flex min-h-0 flex-1">
+                <Sidebar />
+                <main className="relative flex min-w-0 flex-1 flex-col bg-background">
+                  <DotMatrix className="z-0" />
+                  <Main />
+                </main>
+                {viewer ? (
+                  <Suspense fallback={null}>
+                    <FileViewer />
+                  </Suspense>
+                ) : null}
+              </div>
+            </>
+          )}
+        </HeaderSlots>
+        <CommandPalette />
+      </SidebarProvider>
+    </div>
   );
 }

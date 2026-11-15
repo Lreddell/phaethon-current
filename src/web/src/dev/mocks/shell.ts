@@ -85,6 +85,37 @@ const threads: Record<string, Thread[]> = {
   thesis: [],
 };
 
+/**
+ * `#mock&many`: School holds about 1500 conversations and Work 400, spread
+ * over a year and a half (denser lately), with a few pinned, to try the
+ * sidebar at scale. Titles are invented from a small vocabulary.
+ */
+function manyConversations(count: number, seed: number): Thread[] {
+  const topics = ["Fourier series", "graph colouring", "the lab report", "binary search trees", "the reading response", "eigenvalues", "the group project", "dynamic programming", "the essay outline", "probability puzzles", "the poster draft", "regular expressions", "the study plan", "limits and continuity", "sorting algorithms", "the survey results"];
+  const forms = ["Questions about {t}", "Notes on {t}", "Explain {t} simply", "Practice set: {t}", "Review {t} before Friday", "Fix my approach to {t}", "Summarize {t}", "Ideas for {t}"];
+  let r = seed;
+  const rand = () => ((r = (r * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const out: Thread[] = [];
+  for (let i = 0; i < count; i++) {
+    const t = topics[Math.floor(rand() * topics.length)]!;
+    const title = `${forms[Math.floor(rand() * forms.length)]!.replace("{t}", t)} #${count - i}`;
+    const age = Math.round(45 * min * i * (1 + i / 150) + rand() * 30 * min);
+    out.push({
+      id: String(1_650_000_000_000 + seed * 10_000 + i),
+      title,
+      updated: now - 6 * min - age,
+      messages: 2 + Math.floor(rand() * 20),
+      text: [`Can you help with ${t}? (${title})`, `Sure. Here is a short walk through ${t}, step by step…`],
+      ...(i % 400 === 7 ? { pinned: now - day + i } : {}),
+    });
+  }
+  return out;
+}
+if (hash.has("many")) {
+  threads.school!.push(...manyConversations(1500, 1));
+  threads.work!.push(...manyConversations(400, 2));
+}
+
 const settings = {
   backend: "phaethon",
   hasAnthropicKey: false,
@@ -217,7 +248,28 @@ export default {
     space(args.id);
   },
 
-  threads_list: (args: { space: string }) => [...list(args.space)].sort((a, b) => b.updated - a.updated).map(summary),
+  /** As the core pages it (src/server/threads/page.ts): without paging arguments, the plain array. */
+  threads_list: (args: { space: string; limit?: number; before?: string | null; query?: string }) => {
+    const all = [...list(args.space)].sort((a, b) => b.updated - a.updated || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)).map(summary);
+    if (args.limit === undefined && args.before === undefined && args.query === undefined) return all;
+    const q = fold(args.query ?? "").trim();
+    const matching = q ? all.filter((t) => fold(t.title).includes(q)) : all;
+    const pinned = matching.filter((t) => t.pinned).sort((a, b) => a.pinned! - b.pinned!);
+    let rest = matching.filter((t) => !t.pinned);
+    if (args.before) {
+      const [u, id] = [Number(args.before.split(":")[0]), args.before.slice(args.before.indexOf(":") + 1)];
+      rest = rest.filter((t) => t.updated < u || (t.updated === u && t.id < id));
+    }
+    const shown = rest.slice(0, args.limit ?? 50);
+    const hasMore = rest.length > shown.length;
+    const last = shown[shown.length - 1];
+    return { items: args.before ? shown : [...pinned, ...shown], total: matching.length, hasMore, nextCursor: hasMore && last ? `${last.updated}:${last.id}` : null };
+  },
+  thread_summary: (args: { space: string; thread: string }) => {
+    const t = list(args.space).find((x) => x.id === args.thread);
+    return t ? summary(t) : null;
+  },
+  threads_count: (args: { space: string }) => ({ total: list(args.space).length, pinned: list(args.space).filter((t) => t.pinned).length }),
   thread_create: (args: { space: string }) => {
     list(args.space);
     return String(++nextId);

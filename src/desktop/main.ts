@@ -21,6 +21,11 @@ const captureTo = process.env.PHAETHON_CAPTURE;
 
 protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true } }]);
 
+// Chromium keeps its cookie key in a "Phaethon Safe Storage" keychain entry that only the signature
+// that wrote it may read. Builds are signed ad hoc, so every update asked for the login password.
+// Sign-in cookies are copied to the core's own keychain entry, so the browser profile can do without.
+if (process.platform === "darwin") app.commandLine.appendSwitch("use-mock-keychain");
+
 // Headless capture (scripts/capture.mjs) renders offscreen, skips the single-instance lock and uses
 // a throwaway browser profile, so a capture never reads or leaves state in the app's real one.
 if (captureTo) app.setPath("userData", process.env.PHAETHON_CAPTURE_PROFILE || fs.mkdtempSync(path.join(os.tmpdir(), "phaethon-capture-")));
@@ -161,8 +166,11 @@ function createMainWindow(): BrowserWindow {
     // paintWhenInitiallyHidden: false; Electron never fires ready-to-show then,
     // and the window stays hidden for good.
     show: false,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#17171a" : "#fafafa",
+    // The web --background colour (src/web/src/index.css), so the first frame matches.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#1a1a1a" : "#ffffff",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    // Centred on the 48 px title bar.
+    ...(process.platform === "darwin" ? { trafficLightPosition: { x: 14, y: 18 } } : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
