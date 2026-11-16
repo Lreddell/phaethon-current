@@ -1,7 +1,7 @@
 import { motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { SpaceView } from "@/app/api";
-import { Header } from "@/app/Header";
+import { Header, useViewActive } from "@/app/Header";
 import { useNav } from "@/app/store";
 import { ArtCanvas } from "@/components/art";
 import { cleanMessage, SurfaceError } from "@/components/errors";
@@ -35,8 +35,9 @@ import { Page, StudyText } from "./parts";
  * artifact cards (a grey frame holding a white sheet, the name below).
  */
 export function Overview({ space, open }: { space: SpaceView; open: (s: StudyScreen) => void }) {
-  const overview = useLoad(() => studyOverview(space.id), [space.id]);
-  const sources = useLoad(() => studySources(space.id), [space.id]);
+  const active = useViewActive();
+  const overview = useLoad(() => studyOverview(space.id), [space.id], active);
+  const sources = useLoad(() => studySources(space.id), [space.id], active);
   const [make, setMake] = useState<"deck" | "quiz" | null>(null);
   const [lastMake, setLastMake] = useState<"deck" | "quiz">("deck");
   const [remove, setRemove] = useState<{ path: string; title: string; kind: "deck" | "quiz" } | null>(null);

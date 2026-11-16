@@ -72,3 +72,19 @@ test("retapping Study in another space keeps the first space's session", async (
   await page.locator('[role="tab"][data-tab="view:school/study"]').click();
   await expect(page.getByRole("button", { name: /^Show answer/ })).toBeVisible();
 });
+
+test("returning to Study finds decks and quizzes saved while its tab was hidden", async ({ page }) => {
+  core = await startCore({ setup: fixtures });
+  await core.open(page);
+  await page.getByRole("button", { name: "Go to School", exact: true }).click();
+  const views = page.getByRole("list", { name: "Views" });
+  await views.getByRole("button", { name: /^Study/ }).click();
+  await expect(page.getByRole("button", { name: "QA cards", exact: true })).toBeVisible();
+  await views.getByRole("button", { name: /^Plan/ }).click();
+  const study = path.join(core.home, "Phaethon", "default", "spaces", "school", "study");
+  fs.writeFileSync(path.join(study, "decks", "new.md"), "---\ntitle: Newly saved cards\n---\n\nQ: What is the Cobalt code?\nA: 23\n");
+  fs.writeFileSync(path.join(study, "quizzes", "new.json"), JSON.stringify({ title: "Newly saved quiz", created: Date.now(), sources: [], questions: [{ id: "q1", kind: "truefalse", prompt: "The Cobalt code is 23.", answer: true, explanation: "The notes say 23." }] }));
+  await views.getByRole("button", { name: /^Study/ }).click();
+  await expect(page.getByRole("button", { name: "Newly saved cards", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Newly saved quiz", exact: true })).toBeVisible();
+});
