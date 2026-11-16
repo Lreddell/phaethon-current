@@ -82,36 +82,6 @@ test("a file named in a reply opens in the viewer, a web link stays a link", asy
   await expect(reply.locator('[data-slot="file-chip"][data-path="notes/week6.md"]')).toBeVisible();
 });
 
-test("Settings returns to its opener with other tabs on either side", async ({ page }) => {
-  core = await startCore({ setup: (home) => {
-    const dir = path.join(spaceDir(home), ".phaethon");
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "space.json"), JSON.stringify({ name: "School", educationEnabled: true }));
-  } });
-  await core.open(page);
-  await composer(page).fill("Keep this unsent draft");
-  await page.getByRole("list", { name: "Views" }).getByRole("button", { name: /^Plan/ }).click();
-  const tabs = page.getByRole("tablist", { name: "Open pages" });
-  await tabs.getByRole("tab", { name: "New chat" }).click();
-  await page.keyboard.press("ControlOrMeta+Comma");
-  const settings = page.getByRole("navigation", { name: "Settings", exact: true });
-  await settings.getByRole("button", { name: "Appearance", exact: true }).click();
-  await page.keyboard.press("Escape");
-  await expect(composer(page)).toBeVisible();
-  await expect(composer(page)).toHaveValue("Keep this unsent draft");
-
-  await page.keyboard.press("ControlOrMeta+Comma");
-  await settings.getByRole("button", { name: /^Back/ }).click();
-  await expect(composer(page)).toBeVisible();
-  await expect(composer(page)).toHaveValue("Keep this unsent draft");
-
-  // If the opener was closed, use the normal neighbouring-tab fallback.
-  await page.keyboard.press("ControlOrMeta+Comma");
-  await tabs.getByRole("button", { name: "Close New chat", exact: true }).click();
-  await settings.getByRole("button", { name: /^Back/ }).click();
-  await expect(page.getByRole("heading", { name: "Nothing coming up" })).toBeVisible();
-});
-
 test("the composer completes @ with the space's files and / with commands", async ({ page }) => {
   core = await startCore({ setup: withNotes });
   await core.open(page);

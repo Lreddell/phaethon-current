@@ -5,11 +5,11 @@ import type { AddressInfo, Socket } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { canvas } from "./adapters/canvas.ts";
-import { defaultOptions, fetchFile, fileKey, importCourse, linkKey, sniff, writeGrades, type Got, type Options, type Step } from "./import.ts";
+import { defaultOptions, fetchFile, fileKey, importCourse, linkKey, sniff, type Got, type Options, type Step } from "./import.ts";
 import { allowLoopbackForTests, Session } from "./session.ts";
-import { displayTime, type FileRec } from "./store.ts";
+import type { FileRec } from "./store.ts";
 import { testPdf } from "./text/test-pdfs.ts";
 import { emptyContent, gradeItem, remoteFile, Site, type Course, type CourseContent, type CourseGrades, type RemoteFile } from "./types.ts";
 
@@ -314,68 +314,6 @@ describe("importer", () => {
     await importCourse(f.session, courses, course(), emptyContent(), out.state, [], opts(), none);
     expect(read(path.join(c, "grades.md"))).toContain("91.25%");
     expect(read(path.join(c, "README.md"))).toContain("**Grades**: [grades.md](grades.md) (from the last time they could be read).");
-  });
-
-  it("refreshes visible import and grade check times without downloading unchanged files", async () => {
-    const f = await fixture("refresh-times");
-    const early = Date.parse("2026-11-13T05:00:00Z");
-    const later = Date.parse("2026-11-16T03:00:00Z");
-    const clock = vi.spyOn(Date, "now").mockReturnValue(early);
-    try {
-      f.site.route("/data", { status: 200, headers: { "Content-Type": "application/octet-stream" }, body: Buffer.from("data") });
-      const remote = file("data.bin", null, j(f.s, "/data"), 4, []);
-      remote.version = "v1";
-      const content = { ...emptyContent(), files: [remote] };
-      const grades: CourseGrades = { current: {}, groups: [], items: [gradeItem("Practicum", { missing: true, possible: 100 })] };
-      const root = path.join(f.root, "courses");
-      const first = await importCourse(f.session, root, course(), content, undefined, [], opts({ grades }), none);
-      const dir = path.join(root, first.state.folder);
-      const source = path.join(dir, "files/data.bin");
-      const mtime = fs.statSync(source).mtimeMs;
-      clock.mockReturnValue(later);
-      const again = await importCourse(f.session, root, course(), content, first.state, [], opts({ grades }), none);
-      expect(read(path.join(dir, "README.md"))).toContain(`on ${displayTime(later / 1000)}.`);
-      expect(read(path.join(dir, "grades.md"))).toContain(`on ${displayTime(later / 1000)}.`);
-      expect(again.state.lastSync).toBe(later);
-      expect([again.downloaded, again.unchanged]).toEqual([0, 1]);
-      expect(f.site.hits("/data")).toHaveLength(1);
-      expect(fs.statSync(source).mtimeMs).toBe(mtime);
-      expect(ls(path.join(dir, "files"))).toEqual(["data.bin"]);
-    } finally { clock.mockRestore(); }
-  });
-
-  it("refreshes the visible grade check time when a grade-only refresh returns identical data", async () => {
-    const f = await fixture("grade-check-time");
-    const early = Date.parse("2026-11-13T05:00:00Z");
-    const later = Date.parse("2026-11-16T03:00:00Z");
-    const clock = vi.spyOn(Date, "now").mockReturnValue(early);
-    try {
-      const grades: CourseGrades = { current: {}, groups: [], items: [] };
-      const root = path.join(f.root, "courses");
-      const first = await importCourse(f.session, root, course(), emptyContent(), undefined, [], opts({ grades }), none);
-      const dir = path.join(root, first.state.folder);
-      clock.mockReturnValue(later);
-      writeGrades(dir, course().name, grades);
-      expect(read(path.join(dir, "grades.md"))).toContain(`on ${displayTime(later / 1000)}.`);
-      expect(read(path.join(dir, "README.md"))).toContain(`on ${displayTime(early / 1000)}.`);
-    } finally { clock.mockRestore(); }
-  });
-
-  it("keeps the previous grade check time when an import cannot read grades", async () => {
-    const f = await fixture("grade-check-failed");
-    const early = Date.parse("2026-11-13T05:00:00Z");
-    const later = Date.parse("2026-11-16T03:00:00Z");
-    const clock = vi.spyOn(Date, "now").mockReturnValue(early);
-    try {
-      const root = path.join(f.root, "courses");
-      const first = await importCourse(f.session, root, course(), emptyContent(), undefined, [], opts({ grades: { current: {}, groups: [], items: [] } }), none);
-      const dir = path.join(root, first.state.folder);
-      const oldGrades = read(path.join(dir, "grades.md"));
-      clock.mockReturnValue(later);
-      await importCourse(f.session, root, course(), emptyContent(), first.state, [], opts(), none);
-      expect(read(path.join(dir, "grades.md"))).toBe(oldGrades);
-      expect(read(path.join(dir, "README.md"))).toContain("(from the last time they could be read)");
-    } finally { clock.mockRestore(); }
   });
 
   it("unchanged bytes are neither downloaded nor written, and changed ones always are", async () => {

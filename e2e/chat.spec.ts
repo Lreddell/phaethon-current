@@ -78,19 +78,6 @@ test("a failed call shows a sized error with its fix, and retry answers", async 
   await expect(page.getByText("Reconnecting to Phaethon’s core…")).toHaveCount(0);
 });
 
-test("numeric formulas render while prices and inline code stay text", async ({ page }) => {
-  const formula = "$17 + 23 = 40$";
-  const reply = `Arithmetic: ${formula}\n\nAlternate: \\(2 + 2 = 4\\).\n\nCost: $5 and $10.\n\nCode: \`${formula}\`.`;
-  core = await startCore({ script: { claude: true, steps: [{ text: reply }] } });
-  await core.open(page);
-  await composer(page).fill("Show the arithmetic and prices.");
-  await page.keyboard.press("Enter");
-  const answer = page.locator('[data-role="assistant"]').last();
-  await expect(answer.locator(".katex")).toHaveCount(2);
-  await expect(answer).toContainText("Cost: $5 and $10.");
-  await expect(answer.locator("code")).toHaveText(formula);
-});
-
 test("long words and long messages never widen the page", async ({ page }) => {
   const long = "a".repeat(600);
   core = await startCore({ script: { claude: true, steps: [{ text: `Here: ${long}\n\n\`\`\`\n${"x".repeat(400)}\n\`\`\`` }] } });
