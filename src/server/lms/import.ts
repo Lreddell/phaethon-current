@@ -55,8 +55,6 @@ export type Progress = (step: Step, done: number, total: number) => void;
 
 const README = "README.md";
 const GRADES_MD = "grades.md";
-const README_STAMP = "Imported from ";
-const GRADES_STAMP = "Read from the course site on ";
 const FIXED = [README, GRADES_MD, "syllabus.md", "assignments.md", "announcements.md", "modules.md", "links.md", "pages", "files", "readings"];
 const MAX_PAGE = 2 * 1024 * 1024;
 const INDEX_LIST_MAX = 200;
@@ -465,22 +463,8 @@ export async function fetchFile(session: Session, root: string, f: RemoteFile, r
   return { kind: "written", rec };
 }
 
-/** Write `body` unless the file already says the same apart from lines starting with `stamp`. */
-function writeUnlessSame(root: string, rel: string, body: string, stamp: string | null): boolean {
-  const p = path.join(root, rel);
-  if (stamp !== null) {
-    try {
-      if (fs.lstatSync(p).isFile()) {
-        const old = fs.readFileSync(p, "utf8");
-        const strip = (t: string) => lines(t).filter((l) => !l.startsWith(stamp));
-        const a = strip(old);
-        const b = strip(body);
-        if (a.length === b.length && a.every((x, i) => x === b[i])) return false;
-      }
-    } catch {
-      // write it
-    }
-  }
+/** Write changed bytes, including a changed visible last-check time. */
+function writeUnlessSame(root: string, rel: string, body: string): boolean {
   try {
     return writeIfChanged(root, rel, body);
   } catch (e) {
@@ -765,7 +749,7 @@ export async function importCourse(
 
   // ---- The Markdown. ----
   progress("writing", 0, 1);
-  const put = (rel: string, body: string) => void writeUnlessSame(root, rel, body, null);
+  const put = (rel: string, body: string) => void writeUnlessSame(root, rel, body);
   const md = (src: string, base: URL | null, depth: number) => toMarkdown(src, base ?? session.site.base, (u) => rewrite(targets, session, u, depth));
   if (content.syllabus !== null) put("syllabus.md", `# Syllabus: ${course.name}\n\n${md(content.syllabus, null, 0)}\n`);
   const due: Due[] = [];
@@ -831,7 +815,7 @@ export async function importCourse(
     }
     put("links.md", s);
   }
-  if (opts.grades) writeUnlessSame(root, GRADES_MD, gradesMarkdown(course.name, opts.grades), GRADES_STAMP);
+  if (opts.grades) writeUnlessSame(root, GRADES_MD, gradesMarkdown(course.name, opts.grades));
 
   // ---- README. ----
   const said = new Set<string>();
@@ -839,7 +823,7 @@ export async function importCourse(
   const isbns: Isbn[] = [];
   for (const t of texts) for (const i of findIsbns(t)) if (!isbns.some((a) => a.isbn === i.isbn)) isbns.push(i);
   const text = readme(course, session, content, assignments, seen, linksState, isbns, filesState, pagePaths, uniqueSkipped, root, opts.grades);
-  writeUnlessSame(root, README, text, README_STAMP);
+  writeUnlessSame(root, README, text);
   progress("writing", 1, 1);
 
   // ---- What each document is made of. ----
@@ -1070,8 +1054,8 @@ function itemWords(it: GradeItem): string {
 export function writeGrades(courseDir: string, course: string, g: CourseGrades): void {
   const body = gradesMarkdown(course, g);
   try {
-    // Unchanged apart from the date: leave it (and its sync) alone.
-    writeUnlessSame(courseDir, GRADES_MD, body, GRADES_STAMP);
+    // The visible check time must advance even when the grades are unchanged.
+    writeUnlessSame(courseDir, GRADES_MD, body);
   } catch (e) {
     throw new Error(`grades.md couldn’t be written: ${(e as Error).message.replace(/^grades\.md couldn’t be written: /, "")}`);
   }
