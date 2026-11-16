@@ -5,7 +5,7 @@ import { RadioGroup as RadioGroupPrimitive } from "@base-ui/react/radio-group";
 import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
-import { Header } from "@/app/Header";
+import { Header, useViewActive } from "@/app/Header";
 import { useNav } from "@/app/store";
 import { cleanMessage, SurfaceError } from "@/components/errors";
 import { Icon } from "@/components/icon";
@@ -65,6 +65,7 @@ type Stage = "take" | "check" | "results";
  * and a retake of the misses.
  */
 export function QuizScreen({ space, path, onBack, open }: { space: SpaceView; path: string; onBack: () => void; open: (s: StudyScreen) => void }) {
+  const active = useViewActive();
   const quiz = useLoad(() => studyQuiz(space.id, path), [space.id, path]);
   const skeleton = useDelayed(quiz.loading && !quiz.data);
   const q = quiz.data;
@@ -208,7 +209,7 @@ export function QuizScreen({ space, path, onBack, open }: { space: SpaceView; pa
 
   // Keys, when focus isn't in a text field.
   useEffect(() => {
-    if (stage !== "take" || !current || job) return;
+    if (!active || stage !== "take" || !current || job) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.altKey || e.defaultPrevented || e.isComposing) return;
       const t = e.target as HTMLElement | null;
