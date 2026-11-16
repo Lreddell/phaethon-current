@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
-import { Header } from "@/app/Header";
+import { Header, useViewActive } from "@/app/Header";
 import { useNav } from "@/app/store";
 import { cleanMessage, SurfaceError } from "@/components/errors";
 import { Icon, type IconData } from "@/components/icon";
@@ -62,7 +62,8 @@ const DAY = 86_400_000;
  * up and how it moved, and its table with scores to try on what's open.
  */
 export function GradesView({ space }: { space: SpaceView }) {
-  const grades = useLoad(() => lmsGrades(space.id), [space.id]);
+  const active = useViewActive();
+  const grades = useLoad(() => lmsGrades(space.id), [space.id], active);
   const skeleton = useDelayed(grades.loading && !grades.data);
   const [seen] = useState(() => loadSeen(space.id));
   const [refresh, setRefresh] = useState<Refresh | null>(null);
