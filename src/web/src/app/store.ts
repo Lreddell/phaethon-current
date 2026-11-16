@@ -165,6 +165,8 @@ export const useNav = create<Nav>((set, get) => {
   const setRows = (space: string, f: (rows: ThreadRow[]) => ThreadRow[]) => setList(space, (cur) => ({ data: f(cur.data ?? []) }));
   /** Bumped by each full reload, so a page that was asked for before it is dropped. */
   const generation: Record<string, number> = {};
+  /** Settings' Back returns to its opener, even when other tabs follow it. */
+  let settingsReturnTo: string | null = null;
 
   const setOpen = (space: string, id: string) => {
     const open = { ...get().open, [space]: id };
@@ -192,8 +194,9 @@ export const useNav = create<Nav>((set, get) => {
   const activeTabOf = () => get().tabs.find((t) => t.id === get().activeTab);
   /** Replaces the tabs and makes `id` the active one. */
   const commit = (tabs: OpenTab[], id: string) => {
-    set({ tabs, activeTab: id });
     const tab = tabs.find((t) => t.id === id);
+    if (tab?.kind === "settings" && get().activeTab !== id) settingsReturnTo = get().activeTab;
+    set({ tabs, activeTab: id });
     if (tab) apply(tab);
     saveTabs();
   };
@@ -249,11 +252,8 @@ export const useNav = create<Nav>((set, get) => {
     },
 
     activateTab(id) {
-      const tab = get().tabs.find((t) => t.id === id);
-      if (!tab) return;
-      set({ activeTab: id });
-      apply(tab);
-      saveTabs();
+      const tabs = get().tabs;
+      if (tabs.some((t) => t.id === id)) commit(tabs, id);
     },
 
     closeTab(id) {
@@ -269,7 +269,8 @@ export const useNav = create<Nav>((set, get) => {
         return;
       }
       const neighbour = rest[Math.min(at, rest.length - 1)];
-      if (neighbour) commit(rest, neighbour.id);
+      const next = (closing.kind === "settings" ? rest.find((t) => t.id === settingsReturnTo) : undefined) ?? neighbour;
+      if (next) commit(rest, next.id);
       else {
         set({ tabs: [] });
         const fb = fallbackTab();
@@ -365,6 +366,7 @@ export const useNav = create<Nav>((set, get) => {
             const from = tabId({ kind: "chat", space, thread: shown ?? DRAFT });
             const to = tabId({ kind: "chat", space, thread: next });
             if (from !== to && get().tabs.some((t) => t.id === from) && !get().tabs.some((t) => t.id === to)) {
+              if (settingsReturnTo === from) settingsReturnTo = to;
               set({ tabs: get().tabs.map((t) => (t.id === from ? { ...t, id: to, thread: next } : t)), activeTab: get().activeTab === from ? to : get().activeTab });
               saveTabs();
             }
@@ -439,6 +441,7 @@ export const useNav = create<Nav>((set, get) => {
       const from = tabId({ kind: "chat", space, thread: DRAFT });
       const to = tabId({ kind: "chat", space, thread: id });
       if (get().tabs.some((t) => t.id === from)) {
+        if (settingsReturnTo === from) settingsReturnTo = to;
         set({ tabs: get().tabs.filter((t) => t.id !== to).map((t) => (t.id === from ? { ...t, id: to, thread: id, kept: true } : t)), activeTab: get().activeTab === from ? to : get().activeTab });
         saveTabs();
       }
