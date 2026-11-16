@@ -29,6 +29,20 @@ fs.writeFileSync(path.join(dir, `args-${n}.json`), JSON.stringify(args));
 fs.writeFileSync(path.join(dir, `env-${n}.json`), JSON.stringify({ CODEX_HOME: process.env.CODEX_HOME ?? null, CODEX_THREAD_ID: process.env.CODEX_THREAD_ID ?? null, OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? null, cwd: process.cwd() }));
 fs.writeFileSync(path.join(dir, `pid-${n}`), String(process.pid));
 if (appServer < 0) process.exit(2);
+if (process.env.FAKE_CODEX_STARTUP_ERROR) {
+  console.error(process.env.FAKE_CODEX_STARTUP_ERROR);
+  process.exit(1);
+}
+// codex-cli 0.128 rejects unknown --disable names before opening its RPC stream.
+if (process.env.FAKE_CODEX_LEGACY_FEATURES === "1") {
+  const unsupported = new Set(["view_image", "hooks", "skill_search"]);
+  for (let i = 0; i < args.length - 1; i++) {
+    if (args[i] === "--disable" && unsupported.has(args[i + 1])) {
+      console.error(`Error: Unknown feature flag: ${args[i + 1]}`);
+      process.exit(1);
+    }
+  }
+}
 
 const send = (v) => process.stdout.write(JSON.stringify(v) + "\n");
 const log = (v) => fs.appendFileSync(path.join(dir, `rpc-${n}.jsonl`), JSON.stringify(v) + "\n");

@@ -35,11 +35,14 @@ describe("Codex app-server arguments", () => {
     expect(joined).toContain('-c approval_policy="never" -c web_search="disabled" -c default_permissions="phaethon"');
     expect(args).toContain('permissions.phaethon.filesystem={":minimal"="read","/vault/spaces/school"="read","/odd \\"dir\\"\\\\x"="read"}');
     expect(args).toContain("mcp_servers={}");
-    for (const f of DISABLED_FEATURES) expect(joined).toContain(`--disable ${f}`);
+    for (const f of DISABLED_FEATURES) expect(joined).toContain(`-c features.${f}=false`);
+    expect(args).not.toContain("--disable");
     expect(args.some((a) => a === "--add-dir" || a === "--sandbox" || a === "-s" || a.includes("write"))).toBe(false);
     const full = appServerArgsFull();
     expect(full).not.toContain('default_permissions="phaethon"');
     expect(full).toContain("project_doc_max_bytes=0");
+    expect(args.includes("features.prefer_mxc=true")).toBe(process.platform === "win32");
+    expect(full).not.toContain("features.prefer_mxc=true");
   });
 
   it("label commands without the shell and show paths as in the space", () => {
@@ -188,5 +191,29 @@ describe("Codex conversations", () => {
     const events = await send(codex("hi", { reasoning: "high; touch /tmp/x" }));
     expect(errors(events)).toEqual([{ code: "cli", message: "That assistant does not support this reasoning level." }]);
     expect(log.runs()).toBe(n);
+  });
+
+  it.each([false, true])("start with older feature catalogs without dropping restrictions (full access: %s)", async (fullAccess) => {
+    process.env.FAKE_CODEX_LEGACY_FEATURES = "1";
+    try {
+      const events = await send(codex("Check startup compatibility.", { fullAccess }));
+      expect(errors(events)).toEqual([]);
+      expect(events.some((e) => e.kind === "text")).toBe(true);
+      const args = log.args(log.runs());
+      for (const feature of DISABLED_FEATURES) expect(args).toContain(`features.${feature}=false`);
+    } finally {
+      delete process.env.FAKE_CODEX_LEGACY_FEATURES;
+    }
+  });
+
+  it("show the CLI's startup error instead of a generic closed-connection message", async () => {
+    const message = "Error: Invalid Codex configuration for this test.";
+    process.env.FAKE_CODEX_STARTUP_ERROR = message;
+    try {
+      const events = await send(codex("Check startup errors."));
+      expect(errors(events)).toEqual([{ code: "cli", message }]);
+    } finally {
+      delete process.env.FAKE_CODEX_STARTUP_ERROR;
+    }
   });
 });
