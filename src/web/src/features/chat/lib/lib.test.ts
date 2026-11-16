@@ -132,6 +132,15 @@ describe("math", () => {
     expect(escapeCurrencyDollars("Already \\$5 escaped")).toBe("Already \\$5 escaped");
   });
 
+  test("arithmetic that starts with a number stays math beside ordinary prices", () => {
+    expect(prepareMath("Together: $17 + 23 = 40$")).toBe("Together: $17 + 23 = 40$");
+    expect(prepareMath("Then \\(2 + 2 = 4\\).")).toBe("Then $2 + 2 = 4$.");
+    expect(escapeCurrencyDollars("Pay $5 and $10; solve $2 x + 1 = 5$."))
+      .toBe("Pay \\$5 and \\$10; solve $2 x + 1 = 5$.");
+    expect(escapeCurrencyDollars("Pay $5, then compute ($x + 1$)."))
+      .toBe("Pay \\$5, then compute ($x + 1$).");
+  });
+
   test("code is never touched", () => {
     const text = "Use `$5` and\n```\n\\(x\\) $3 \n```\nthen \\(y\\)";
     expect(prepareMath(text)).toBe("Use `$5` and\n```\n\\(x\\) $3 \n```\nthen $y$");

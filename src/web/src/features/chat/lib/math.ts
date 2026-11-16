@@ -70,7 +70,18 @@ export function normalizeMathDelimiters(prose: string): string {
  * escaped, so "$5 and $10" stays text. `$2x$` and `$2$` stay math.
  */
 export function escapeCurrencyDollars(prose: string): string {
-  return prose.replace(/(^|[^\\$])\$(?=\d[\d,]*(?:\.\d+)?(?:[kKmMbB]\b)?(?:\s|$|[.,;:!?)\]—–-]))/g, "$1\\$");
+  return prose.replace(/(^|[^\\$])\$(?=\d[\d,]*(?:\.\d+)?(?:[kKmMbB]\b)?(?:\s|$|[.,;:!?)\]—–-]))/g, (match: string, prefix: string, offset: number) => {
+    const start = offset + prefix.length;
+    // A complete formula such as "$17 + 23 = 40$" takes precedence over money.
+    // Stop at the next unescaped dollar: in "$5 and $10", it starts another price.
+    for (let i = start + 1; i < prose.length; i++) {
+      if (prose[i] === "\\") { i++; continue; }
+      if (prose[i] !== "$") continue;
+      if (!/\s/.test(prose[i - 1]!) && !/[\p{L}\p{N}_]/u.test(prose[i + 1] ?? "")) return match;
+      break;
+    }
+    return `${prefix}\\$`;
+  });
 }
 
 /**
