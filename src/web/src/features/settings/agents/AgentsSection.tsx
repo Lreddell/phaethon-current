@@ -82,6 +82,12 @@ function UsageBar({ w }: { w: UsageWindow }) {
 
 function Usage({ id }: { id: string }) {
   const usage = useLoad(() => instanceUsage(id), [id], "agents:usage");
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = async () => {
+    setRefreshing(true);
+    try { await usage.reload(); }
+    finally { setRefreshing(false); }
+  };
   const waiting = useDelayed(usage.loading && !usage.data);
   if (usage.error && !usage.data) return <RowError className="h-5" message="Couldn’t load usage" onRetry={() => void usage.reload()} />;
   if (!usage.data) {
@@ -93,7 +99,15 @@ function Usage({ id }: { id: string }) {
     ) : null;
   }
   const u = usage.data;
-  if (!u.available || u.windows.length === 0) return <p className="truncate text-subtle-foreground text-xs">{u.reason ?? "No usage limits to show."}</p>;
+  if (!u.available || u.windows.length === 0) return (
+    <div className="flex items-center gap-2">
+      <p className="min-w-0 flex-1 text-subtle-foreground text-xs">{u.reason ?? "No usage limits to show."}</p>
+      <Button size="xs" variant="ghost" disabled={refreshing} onClick={() => void refresh()}>
+        {refreshing ? <Spinner size="xs" /> : <Icon icon={icons.retry} />}
+        Refresh usage
+      </Button>
+    </div>
+  );
   return (
     <div className="flex flex-col gap-1">
       {u.windows.map((w) => (
@@ -361,6 +375,10 @@ function CliRow({
                     ))}
                   </AnimatePresence>
                   <AddAccount cli={cli} onChanged={onChanged} />
+                  <Button size="xs" variant="ghost" className="mx-3 mb-1 self-start" onClick={onRecheck} disabled={rechecking}>
+                    {rechecking ? <Spinner size="xs" /> : <Icon icon={icons.retry} />}
+                    {rechecking ? "Refreshing…" : "Refresh models and usage"}
+                  </Button>
                 </>
               )}
             </RowDetail>
