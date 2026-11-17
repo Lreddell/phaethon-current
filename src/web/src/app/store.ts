@@ -12,18 +12,19 @@ import { mergeRefresh } from "./sidebar/paging";
  * when it is first sent (features/chat/store.ts).
  */
 
-export type View = "chat" | "study" | "grades" | "plan" | "courses";
-export type SettingsSection = "general" | "providers" | "agents" | "spaces" | "courses" | "appearance" | "about";
+export type View = "chat" | "files" | "study" | "grades" | "plan" | "courses";
+export type SettingsSection = "general" | "notifications" | "providers" | "agents" | "spaces" | "courses" | "memory" | "people" | "mail" | "automations" | "appearance" | "about";
 
 /**
  * What an open tab shows. Several can be open at once, like a browser's; the
  * active one decides the derived `activeSpace`, `view`, `open` and `settings`
  * fields below, which the pages read as before.
  */
-export type Tab = { kind: "chat"; space: string; thread: string } | { kind: "view"; space: string; view: Exclude<View, "chat"> } | { kind: "settings"; section: SettingsSection };
+/** Settings isn't a tab: it is its own place (`settings`), and leaving it goes back to the tab you were on. */
+export type Tab = { kind: "chat"; space: string; thread: string } | { kind: "view"; space: string; view: Exclude<View, "chat"> };
 /** An open tab. A tab opened by a plain click is a preview: the next plain click reuses it. It is kept once it has something worth keeping (a sent message, a double-click, ⌘-click). */
 export type OpenTab = Tab & { id: string; kept: boolean };
-export const tabId = (t: Tab): string => (t.kind === "chat" ? `chat:${t.space}/${t.thread}` : t.kind === "view" ? `view:${t.space}/${t.view}` : "settings");
+export const tabId = (t: Tab): string => (t.kind === "chat" ? `chat:${t.space}/${t.thread}` : `view:${t.space}/${t.view}`);
 
 /** The thread key of a space's unsent new chat. Never sent to the core. */
 export const DRAFT = "new";
@@ -64,10 +65,24 @@ type Nav = {
   /** The conversation each space shows (an id, or `DRAFT` for its new chat). */
   open: Record<string, string>;
   collapsed: Record<string, boolean>;
+  /** The sidebar docked beside the page (remembered); see `compact`. */
   sidebarOpen: boolean;
+  /**
+   * The window is too narrow to dock the sidebar beside a page
+   * (components/ui/sidebar.tsx › PAGE_MIN_WIDTH): it floats over the page
+   * instead, shut until asked for (`peek`), and `sidebarOpen` waits for a wider window.
+   */
+  compact: boolean;
+  /** The floating sidebar is out (compact windows only). Choosing a page, a conversation or Settings puts it away. */
+  peek: boolean;
   settings: SettingsSection | null;
   paletteOpen: boolean;
-  viewer: { space: string; path: string } | null;
+  /** What the palette starts with when it opens (the sidebar's search hands its text over). */
+  paletteQuery: string;
+  /** The files open in the viewer, as tabs, in order. */
+  files: ViewerFile[];
+  /** The file on show (one of `files`), or null when the viewer is shut. */
+  viewer: ViewerFile | null;
   /** Conversations (by `chatKey`) that got a reply while they weren't on screen. */
   unread: Record<string, true>;
   /** Bumped when the already-selected view tab is clicked again, so the view can go back to its front page. */
@@ -83,6 +98,10 @@ type Nav = {
   closeTab(id: string): void;
   keepTab(id: string): void;
   reopenTab(): void;
+  /** Closes every tab but `id` (it becomes the active one). */
+  closeOtherTabs(id: string): void;
+  /** Closes the tabs after `id`. */
+  closeTabsToRight(id: string): void;
   /** The next (1) or previous (-1) tab, wrapping. */
   cycleTab(dir: 1 | -1): void;
 
@@ -114,15 +133,31 @@ type Nav = {
   replied(space: string, thread: string): void;
   markRead(space: string, thread: string): void;
   toggleCollapsed(space: string): void;
+  /** Docks or hides the sidebar; in a compact window, brings the floating one out or puts it away. */
   toggleSidebar(): void;
+  setCompact(compact: boolean): void;
+  setPeek(peek: boolean): void;
   openSettings(section?: SettingsSection): void;
   closeSettings(): void;
-  setPalette(open: boolean): void;
+  setPalette(open: boolean, query?: string): void;
+  /** Opens a file in the viewer: in its tab when it is open already, else in a new tab after the one on show. */
   openFile(space: string, path: string): void;
-  closeFile(): void;
+  /** Shows an open file's tab. */
+  showFile(file: ViewerFile): void;
+  /** Closes one file's tab (the one on show by default); the viewer shuts with the last. */
+  closeFile(file?: ViewerFile): void;
+  /** Closes every file but `file`. */
+  closeOtherFiles(file: ViewerFile): void;
+  /** Shuts the viewer and all its tabs. */
+  closeAllFiles(): void;
 };
 
 const LAST_SPACE = "phaethon.lastSpace";
+
+export type ViewerFile = { space: string; path: string };
+/** The most file tabs kept open; past it the oldest one not on show closes. */
+export const MAX_FILES = 12;
+const sameFile = (a: ViewerFile, b: ViewerFile) => a.space === b.space && a.path === b.path;
 const COLLAPSED = "phaethon.collapsed";
 const SIDEBAR = "phaethon.sidebar";
 const OPEN = "phaethon.openThreads";
@@ -165,8 +200,6 @@ export const useNav = create<Nav>((set, get) => {
   const setRows = (space: string, f: (rows: ThreadRow[]) => ThreadRow[]) => setList(space, (cur) => ({ data: f(cur.data ?? []) }));
   /** Bumped by each full reload, so a page that was asked for before it is dropped. */
   const generation: Record<string, number> = {};
-  /** Settings' Back returns to its opener, even when other tabs follow it. */
-  let settingsReturnTo: string | null = null;
 
   const setOpen = (space: string, id: string) => {
     const open = { ...get().open, [space]: id };
@@ -177,8 +210,7 @@ export const useNav = create<Nav>((set, get) => {
   const saveTabs = () => writeJson(TABS, { tabs: get().tabs, active: get().activeTab });
   /** The derived fields follow the active tab. */
   const apply = (tab: Tab) => {
-    if (tab.kind === "settings") set({ settings: tab.section, paletteOpen: false });
-    else {
+    {
       // A new-chat tab opened before the space's list arrived doesn't choose for the space: the list's newest conversation does (loadThreads).
       const undecided = tab.kind === "chat" && tab.thread === DRAFT && !get().threads[tab.space]?.data;
       if (tab.kind === "chat" && get().open[tab.space] !== tab.thread && !undecided) setOpen(tab.space, tab.thread);
@@ -191,14 +223,18 @@ export const useNav = create<Nav>((set, get) => {
       seen();
     }
   };
-  const activeTabOf = () => get().tabs.find((t) => t.id === get().activeTab);
   /** Replaces the tabs and makes `id` the active one. */
   const commit = (tabs: OpenTab[], id: string) => {
-    const tab = tabs.find((t) => t.id === id);
-    if (tab?.kind === "settings" && get().activeTab !== id) settingsReturnTo = get().activeTab;
+    const space = get().activeSpace;
     set({ tabs, activeTab: id });
+    const tab = tabs.find((t) => t.id === id);
     if (tab) apply(tab);
+    settle(space);
     saveTabs();
+  };
+  /** A page was chosen: the floating sidebar goes away, unless only the space changed (its list is what you choose from next). */
+  const settle = (spaceBefore: string | null) => {
+    if (get().peek && get().activeSpace === spaceBefore) set({ peek: false });
   };
   /** A space's chat tab: the conversation it shows (an id, or its new chat). */
   const chatTab = (space: string): Tab => ({ kind: "chat", space, thread: get().open[space] ?? DRAFT });
@@ -206,6 +242,13 @@ export const useNav = create<Nav>((set, get) => {
   const fallbackTab = (): Tab | null => {
     const space = get().activeSpace ?? get().spaces.data?.[0]?.id;
     return space ? chatTab(space) : null;
+  };
+  /** After the last tab closes: a new chat in the active space (never the page just closed). */
+  const openFreshChat = () => {
+    const space = get().activeSpace ?? get().spaces.data?.[0]?.id;
+    if (!space) return saveTabs();
+    setOpen(space, DRAFT);
+    get().openTab({ kind: "chat", space, thread: DRAFT });
   };
 
   return {
@@ -216,8 +259,12 @@ export const useNav = create<Nav>((set, get) => {
     open: {},
     collapsed: readJson<Record<string, boolean>>(COLLAPSED, {}),
     sidebarOpen: readJson<boolean>(SIDEBAR, true),
+    compact: false,
+    peek: false,
     settings: null,
     paletteOpen: false,
+    paletteQuery: "",
+    files: [],
     viewer: null,
     unread: {},
     retap: { view: "chat", n: 0 },
@@ -230,7 +277,7 @@ export const useNav = create<Nav>((set, get) => {
       const tabs = get().tabs;
       const found = tabs.find((t) => t.id === id);
       if (found) {
-        const next = opts.keep && !found.kept ? tabs.map((t) => (t.id === id ? { ...t, kept: true } : t)) : tabs.map((t) => (t.id === id && t.kind === "settings" && tab.kind === "settings" ? { ...t, section: tab.section } : t));
+        const next = opts.keep && !found.kept ? tabs.map((t) => (t.id === id ? { ...t, kept: true } : t)) : tabs;
         commit(next, id);
         return;
       }
@@ -252,14 +299,19 @@ export const useNav = create<Nav>((set, get) => {
     },
 
     activateTab(id) {
-      const tabs = get().tabs;
-      if (tabs.some((t) => t.id === id)) commit(tabs, id);
+      const tab = get().tabs.find((t) => t.id === id);
+      if (!tab) return;
+      const space = get().activeSpace;
+      set({ activeTab: id });
+      apply(tab);
+      settle(space);
+      saveTabs();
     },
 
     closeTab(id) {
       const tabs = get().tabs;
       const at = tabs.findIndex((t) => t.id === id);
-      if (at < 0) return;
+      if (at < 0 || !canCloseTab(tabs, id)) return;
       const closing = tabs[at]!;
       const rest = tabs.filter((t) => t.id !== id);
       set({ closedTabs: [strip(closing), ...get().closedTabs.filter((c) => tabId(c) !== id)].slice(0, MAX_CLOSED) });
@@ -269,14 +321,30 @@ export const useNav = create<Nav>((set, get) => {
         return;
       }
       const neighbour = rest[Math.min(at, rest.length - 1)];
-      const next = (closing.kind === "settings" ? rest.find((t) => t.id === settingsReturnTo) : undefined) ?? neighbour;
-      if (next) commit(rest, next.id);
+      if (neighbour) commit(rest, neighbour.id);
       else {
-        set({ tabs: [] });
-        const fb = fallbackTab();
-        if (fb) get().openTab(fb);
-        else saveTabs();
+        set({ tabs: [], activeTab: null });
+        openFreshChat();
       }
+    },
+
+    closeOtherTabs(id) {
+      const keep = get().tabs.find((t) => t.id === id);
+      if (!keep) return;
+      const gone = get().tabs.filter((t) => t.id !== id);
+      set({ closedTabs: [...gone.reverse().map(strip), ...get().closedTabs].slice(0, MAX_CLOSED) });
+      commit([keep], id);
+    },
+
+    closeTabsToRight(id) {
+      const tabs = get().tabs;
+      const at = tabs.findIndex((t) => t.id === id);
+      if (at < 0 || at === tabs.length - 1) return;
+      const gone = tabs.slice(at + 1);
+      set({ closedTabs: [...gone.reverse().map(strip), ...get().closedTabs].slice(0, MAX_CLOSED) });
+      const rest = tabs.slice(0, at + 1);
+      const active = get().activeTab;
+      commit(rest, rest.some((t) => t.id === active) ? active! : id);
     },
 
     keepTab(id) {
@@ -310,7 +378,8 @@ export const useNav = create<Nav>((set, get) => {
         set({ spaces: { data: list, loading: false }, activeSpace: pick });
         if (!get().tabs.length) {
           const saved = readJson<{ tabs: OpenTab[]; active: string | null }>(TABS, { tabs: [], active: null });
-          const ok = (t: OpenTab) => t.kind === "settings" || list.some((s) => s.id === t.space && (t.kind === "chat" || s.educationEnabled));
+          // A settings tab saved by an older version is dropped: Settings is no longer a tab.
+          const ok = (t: OpenTab) => (t.kind === "chat" || t.kind === "view") && list.some((s) => s.id === t.space && (t.kind === "chat" || t.view === "files" || s.educationEnabled));
           const tabs = saved.tabs.filter(ok);
           const active = tabs.find((t) => t.id === saved.active)?.id ?? tabs[0]?.id;
           if (tabs.length && active) commit(tabs, active);
@@ -327,7 +396,9 @@ export const useNav = create<Nav>((set, get) => {
 
     selectSpace(id, view) {
       const space = get().spaces.data?.find((s) => s.id === id);
-      const next = view ?? (space?.educationEnabled ? get().view : "chat");
+      // Files is in every space; the study views only where study tools are on.
+      const was = get().view;
+      const next = view ?? (was === "chat" || was === "files" || space?.educationEnabled ? was : "chat");
       get().openTab(next === "chat" ? chatTab(id) : { kind: "view", space: id, view: next });
     },
 
@@ -366,7 +437,6 @@ export const useNav = create<Nav>((set, get) => {
             const from = tabId({ kind: "chat", space, thread: shown ?? DRAFT });
             const to = tabId({ kind: "chat", space, thread: next });
             if (from !== to && get().tabs.some((t) => t.id === from) && !get().tabs.some((t) => t.id === to)) {
-              if (settingsReturnTo === from) settingsReturnTo = to;
               set({ tabs: get().tabs.map((t) => (t.id === from ? { ...t, id: to, thread: next } : t)), activeTab: get().activeTab === from ? to : get().activeTab });
               saveTabs();
             }
@@ -441,7 +511,6 @@ export const useNav = create<Nav>((set, get) => {
       const from = tabId({ kind: "chat", space, thread: DRAFT });
       const to = tabId({ kind: "chat", space, thread: id });
       if (get().tabs.some((t) => t.id === from)) {
-        if (settingsReturnTo === from) settingsReturnTo = to;
         set({ tabs: get().tabs.filter((t) => t.id !== to).map((t) => (t.id === from ? { ...t, id: to, thread: id, kept: true } : t)), activeTab: get().activeTab === from ? to : get().activeTab });
         saveTabs();
       }
@@ -525,26 +594,62 @@ export const useNav = create<Nav>((set, get) => {
     },
 
     toggleSidebar() {
+      if (get().compact) return set({ peek: !get().peek });
       const open = !get().sidebarOpen;
       set({ sidebarOpen: open });
       writeJson(SIDEBAR, open);
     },
 
+    setCompact(compact) {
+      if (compact !== get().compact) set({ compact, peek: false });
+    },
+    setPeek(peek) {
+      if (peek !== get().peek) set({ peek });
+    },
+
     openSettings(section = "general") {
-      get().openTab({ kind: "settings", section });
+      set({ settings: section, paletteOpen: false, peek: false });
     },
     closeSettings() {
-      const tab = activeTabOf();
-      if (tab?.kind === "settings") get().closeTab(tab.id);
+      if (get().settings !== null) set({ settings: null });
     },
-    setPalette(open) {
-      set({ paletteOpen: open });
+    setPalette(open, query = "") {
+      set({ paletteOpen: open, paletteQuery: open ? query : "", ...(open ? { peek: false } : {}) });
     },
     openFile(space, path) {
-      set({ viewer: { space, path } });
+      const file = { space, path };
+      const { files, viewer } = get();
+      const had = files.find((f) => sameFile(f, file));
+      if (had) return set({ viewer: had });
+      const at = viewer ? files.findIndex((f) => sameFile(f, viewer)) + 1 : files.length;
+      let next = [...files.slice(0, at), file, ...files.slice(at)];
+      while (next.length > MAX_FILES) {
+        const drop = next.findIndex((f) => f !== file && !(viewer && sameFile(f, viewer)));
+        next = next.filter((_, i) => i !== drop);
+      }
+      set({ files: next, viewer: file });
     },
-    closeFile() {
-      set({ viewer: null });
+    showFile(file) {
+      const had = get().files.find((f) => sameFile(f, file));
+      if (had) set({ viewer: had });
+    },
+    closeFile(file) {
+      const { files, viewer } = get();
+      const target = file ?? viewer;
+      if (!target) return;
+      const at = files.findIndex((f) => sameFile(f, target));
+      if (at === -1) return;
+      const next = files.filter((_, i) => i !== at);
+      // Closing the one on show shows its neighbour (the next, else the previous), as a browser does.
+      const showing = viewer && !sameFile(viewer, target) ? viewer : (next[at] ?? next[at - 1] ?? null);
+      set({ files: next, viewer: showing });
+    },
+    closeOtherFiles(file) {
+      const had = get().files.find((f) => sameFile(f, file));
+      if (had) set({ files: [had], viewer: had });
+    },
+    closeAllFiles() {
+      set({ files: [], viewer: null });
     },
   };
 });
@@ -566,6 +671,17 @@ export function useOpenThread(space: string | null | undefined): string {
 
 if (import.meta.env.DEV && typeof window !== "undefined") {
   window.__phaethon = { ...(window.__phaethon ?? {}), nav: useNav };
+}
+
+/**
+ * Whether closing tab `id` would change anything. Closing the last tab leaves a
+ * new chat, so the one tab that can't close is a lone new chat: closing it
+ * would put the same tab back.
+ */
+export function canCloseTab(tabs: readonly OpenTab[], id: string): boolean {
+  const tab = tabs.find((t) => t.id === id);
+  if (!tab) return false;
+  return !(tabs.length === 1 && tab.kind === "chat" && tab.thread === DRAFT);
 }
 
 /** A tab without its open-state, for the closed list. */

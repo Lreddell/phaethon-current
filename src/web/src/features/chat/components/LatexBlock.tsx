@@ -11,10 +11,22 @@ import { cn } from "@/lib/utils";
 import { CodeBlock, CopyButton } from "./CodeBlock";
 
 type Outcome =
-  | { status: "ok"; id: string; engine: string }
+  | { status: "ok"; id: string; engine: string; warnings?: string[] }
   | { status: "failed"; message: string; line: number | null; log: string }
   | { status: "noEngine"; message: string }
   | { status: "unavailable"; message: string };
+
+/**
+ * What this window has already compiled and drawn, so a conversation opened
+ * again shows its documents at once and at their size, instead of a skeleton
+ * that grows (and moves the conversation) when the PDF arrives.
+ */
+const outcomes = new Map<string, Outcome>();
+const heights = new Map<string, number>();
+const remember = <V,>(map: Map<string, V>, key: string, value: V) => {
+  if (map.size > 100) map.clear();
+  map.set(key, value);
+};
 
 function PdfPages({ id }: { id: string }) {
   const box = useRef<HTMLDivElement>(null);
@@ -31,7 +43,10 @@ function PdfPages({ id }: { id: string }) {
         const width = Math.min(box.current.clientWidth - 2, 720);
         const canvases = [...box.current.querySelectorAll("canvas")];
         for (let i = 0; i < Math.min(doc.numPages, canvases.length); i++) await renderPage(doc, i + 1, canvases[i]!, width);
+        if (live && box.current) remember(heights, id, box.current.offsetHeight);
       } catch (e) {
+        // Gone from the core's cache: compile it again next time instead of remembering this id.
+        for (const [k, o] of outcomes) if (o.status === "ok" && o.id === id) outcomes.delete(k);
         if (live) setError(errorText(e));
       }
     })();
@@ -41,7 +56,7 @@ function PdfPages({ id }: { id: string }) {
   }, [id]);
   if (error) return <p className="p-3 text-muted-foreground text-xs">Couldn’t show the PDF: {error}</p>;
   return (
-    <div ref={box} className="flex max-h-128 flex-col items-center gap-2 overflow-auto bg-muted/40 p-3">
+    <div ref={box} className="flex max-h-128 flex-col items-center gap-2 overflow-auto bg-muted/40 p-3" style={{ minHeight: heights.get(id) }}>
       {Array.from({ length: Math.max(1, Math.min(pages, 12)) }, (_, i) => (
         <canvas key={i} className={cn("rounded-sm bg-white", pages === 0 && "h-40 w-full animate-skeleton")} />
       ))}
@@ -52,22 +67,28 @@ function PdfPages({ id }: { id: string }) {
 
 /** A LaTeX document compiled on this computer and shown as its PDF, with its source one tab away. */
 export function LatexBlock({ source, space, streaming }: { source: string; space: string; streaming: boolean }) {
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const figure = !/\\documentclass/.test(source);
+  const key = `${figure}\n${source}`;
+  const [outcome, setOutcome] = useState<Outcome | null>(() => (streaming ? null : (outcomes.get(key) ?? null)));
   const [tab, setTab] = useState<"pdf" | "source">("pdf");
   const [saving, setSaving] = useState(false);
-  const figure = !/\\documentclass/.test(source);
   useEffect(() => {
     if (streaming) return;
+    const hit = outcomes.get(key);
+    if (hit) return setOutcome(hit);
     let live = true;
     setOutcome(null);
     invoke<Outcome>("latex_compile", { source, figure }).then(
-      (o) => live && setOutcome(o),
+      (o) => {
+        if (o.status !== "unavailable") remember(outcomes, key, o);
+        if (live) setOutcome(o);
+      },
       (e) => live && setOutcome({ status: "unavailable", message: errorText(e) }),
     );
     return () => {
       live = false;
     };
-  }, [source, figure, streaming]);
+  }, [key, source, figure, streaming]);
 
   if (streaming) return <CodeBlock code={source} lang="latex" />;
   const save = async () => {
@@ -87,12 +108,12 @@ export function LatexBlock({ source, space, streaming }: { source: string; space
       <div className="flex h-8 items-center gap-1 border-b px-2">
         <div className="flex items-center gap-0.5 rounded-md bg-muted p-0.5">
           {(["pdf", "source"] as const).map((t) => (
-            <button key={t} type="button" onClick={() => setTab(t)} className={cn("h-5 rounded-sm px-1.5 font-medium text-2xs", tab === t ? "bg-background text-foreground dark:bg-white/10" : "text-muted-foreground hover:text-foreground")}>
+            <button key={t} type="button" onClick={() => setTab(t)} className={cn("h-5 rounded-sm px-1.5 font-medium text-xs", tab === t ? "bg-background text-foreground dark:bg-white/10" : "text-muted-foreground hover:text-foreground")}>
               {t === "pdf" ? "PDF" : "LaTeX"}
             </button>
           ))}
         </div>
-        <span className="ml-1.5 min-w-0 flex-1 truncate text-2xs text-muted-foreground">
+        <span className="ml-1.5 min-w-0 flex-1 truncate text-muted-foreground text-xs">
           {outcome === null ? (
             <span className="inline-flex items-center gap-1.5">
               <Spinner size="xs" /> Compiling…
@@ -102,7 +123,7 @@ export function LatexBlock({ source, space, streaming }: { source: string; space
           ) : null}
         </span>
         <CopyButton text={source} className="size-6" label="Copy LaTeX" />
-        <button type="button" onClick={() => void save()} disabled={saving} className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-2xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60">
+        <button type="button" onClick={() => void save()} disabled={saving} className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-muted-foreground text-xs hover:bg-accent hover:text-foreground disabled:opacity-60">
           {saving ? <Spinner size="xs" /> : <Icon icon={icons.download} className="size-3.5" />}
           Save
         </button>
@@ -111,7 +132,7 @@ export function LatexBlock({ source, space, streaming }: { source: string; space
         <pre className="md-code-body"><code>{source}</code></pre>
       ) : outcome === null ? (
         <div className="p-3">
-          <Skeleton className="h-48 w-full rounded-md" />
+          <Skeleton data-pending="" className="h-48 w-full rounded-md" />
         </div>
       ) : outcome.status === "ok" ? (
         <PdfPages id={outcome.id} />

@@ -9,6 +9,9 @@ changes Phaethon's own license.
 Files whose first line reads "Adapted from T3 Code (https://github.com/pingdotgg/t3code)"
 contain code copied or adapted from T3 Code (mostly the UI primitives in
 `src/web/src/components/ui/`, which T3 Code distributes under the license below).
+`src/web/src/components/ui/work-log.tsx` follows T3 Code's chat work log rows
+(`apps/web/src/components/chat/WorkLog.tsx`, `TimelineWorkEntryRow.tsx` and
+`ShellCommandBlock.tsx`).
 
 ```
 MIT License
@@ -452,5 +455,11 @@ SOFTWARE.
 from Lobe Icons (https://github.com/lobehub/lobe-icons, MIT; see the
 `LICENSES.txt` beside them). `src/web/src/assets/sites/` holds the Canvas and
 Moodle marks from Simple Icons (https://github.com/simple-icons/simple-icons,
-CC0 1.0; see the `LICENSES.txt` beside them). Every mark remains the trademark
-of its owner and is shown only to identify that provider or course site.
+CC0 1.0; see the `LICENSES.txt` beside them). `src/web/src/assets/mail/` holds
+the Gmail, Yahoo and Microsoft marks from SVG Logos
+(https://github.com/gilbarbara/logos, CC0 1.0) and the Outlook and iCloud marks
+from theSVG (https://github.com/glincker/thesvg, MIT); see the `LICENSES.txt`
+beside them. The Mail, Shortcuts and Outlook app icons are read from the apps
+installed on the person's own Mac at run time and are never bundled. Every mark
+remains the trademark of its owner and is shown only to identify that
+provider, course site, mail account or app.

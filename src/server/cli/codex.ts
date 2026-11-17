@@ -7,7 +7,7 @@ import type { Outcome } from "./cli.ts";
 import { abortion, finishChild, type DriveContext, type Driver, type Invocation } from "./drive.ts";
 import { JsonRpcPeer, PeerClosed, RpcError } from "./jsonrpc.ts";
 import { sleep, stopGroup } from "./process.ts";
-import { shownPath, ToolEvents, type Granted } from "./tools.ts";
+import { commandLabel, commandLine, ToolEvents, type Granted } from "./tools.ts";
 
 /**
  * Codex through `codex app-server` (JSON-RPC over stdio), one server per
@@ -101,29 +101,25 @@ export function invocation(ctx: DriveContext): Invocation {
   return { args: appServerArgs([ctx.workingDir, ...ctx.dirs, ...ownDirs(ctx.bin)]) };
 }
 
-/** "Running cat notes.md": the command without the shell Codex wraps it in, paths shown as in the space. */
-export function commandLabel(command: string, base: string, granted: Granted): string {
-  let inner = command;
-  for (const sep of [" -lc ", " -c "]) {
-    const at = command.indexOf(sep);
-    if (at >= 0) {
-      inner = command
-        .slice(at + sep.length)
-        .trim()
-        .replace(/^['"]+|['"]+$/g, "");
-      break;
-    }
-  }
-  const shown = inner
-    .split(" ")
-    .map((w) => (w.startsWith("/") ? shownPath(w, base, granted).shown : w))
-    .join(" ");
-  return `Running ${[...shown].slice(0, 120).join("")}`;
-}
-
 type Item = Record<string, unknown> & { type?: unknown; id?: unknown };
 
 const str = (v: unknown) => (typeof v === "string" ? v : "");
+
+/** What a dynamic or MCP tool answered, as text. */
+function toolAnswer(item: Item): string {
+  const texts = (list: unknown) =>
+    Array.isArray(list)
+      ? list
+          .map((c) => (c && typeof c === "object" ? ((c as { text?: unknown }).text as string | undefined) : undefined))
+          .filter((t): t is string => typeof t === "string")
+          .join("\n")
+      : "";
+  if (Array.isArray(item.contentItems)) return texts(item.contentItems).trim();
+  const result = item.result as { content?: unknown } | null | undefined;
+  if (result && typeof result === "object") return texts(result.content).trim();
+  const error = item.error as { message?: unknown } | null | undefined;
+  return error && typeof error.message === "string" ? error.message : "";
+}
 
 /** App-server thread items → Phaethon's tool and text events. */
 export class CodexItems {
@@ -164,13 +160,12 @@ export class CodexItems {
     const id = str(item.id);
     switch (item.type) {
       case "commandExecution":
-        return this.#tools.start(id, "command", item, commandLabel(str(item.command), this.base, this.granted));
+        return this.#tools.start(id, "command", item, commandLabel(commandLine(item, this.base, this.granted)));
       case "webSearch":
         return this.#tools.start(id, "search", item, `Searching the web for “${str(item.query)}”`);
       case "mcpToolCall":
-        return this.#tools.start(id, "other", item, `Using tool ${str(item.tool)}`);
       case "dynamicToolCall":
-        return this.#tools.start(id, "other", item, `Using tool ${str(item.tool)}`);
+        return this.#tools.startNamed(id, str(item.tool), item.arguments);
       case "fileChange":
         return this.#tools.start(id, "write", item, "Changing files");
       default:
@@ -200,8 +195,8 @@ export class CodexItems {
     let status: ToolStatus = "success";
     if (failed) status = "failed";
     else if (item.type === "commandExecution" && (exit === null || exit === undefined)) status = "incomplete";
-    // What the command printed, for "Show output"; a failure with nothing printed says so. Exit codes stay out of the chat.
-    const printed = typeof item.aggregatedOutput === "string" ? item.aggregatedOutput.trim() : "";
+    // What the command printed (or a tool answered), for its details; a failure with nothing printed says so. Exit codes stay out of the chat.
+    const printed = typeof item.aggregatedOutput === "string" ? item.aggregatedOutput.trim() : toolAnswer(item);
     const detail = printed ? printed : failed ? "Tool reported an error" : undefined;
     return [...out, ...this.#tools.end(str(item.id), status, detail)];
   }
@@ -246,7 +241,15 @@ export const drive: Driver = async (gc, ctx, emit) => {
   const turnDone = new Promise<Outcome>((r) => (completed = r));
 
   const peer = new JsonRpcPeer(gc.stdin!, gc.stdout, {
-    onRequest: (method) => answerServerRequest(method, ctx.fullAccess),
+    onRequest: async (method, params) => {
+      // Codex calls back to run one of Phaethon's tools.
+      if (method === "item/tool/call" && ctx.tools) {
+        const p = (params ?? {}) as { tool?: unknown; arguments?: unknown };
+        const r = await ctx.tools.call(str(p.tool), p.arguments);
+        return { contentItems: [{ type: "inputText", text: r.text }], success: !r.isError };
+      }
+      return answerServerRequest(method, ctx.fullAccess);
+    },
     onNotification: (method, params) => {
       const p = (params ?? {}) as Record<string, unknown>;
       if (threadId && typeof p.threadId === "string" && p.threadId !== threadId) return;
@@ -314,11 +317,13 @@ export const drive: Driver = async (gc, ctx, emit) => {
     };
     if (ctx.fullAccess) threadParams.sandbox = "danger-full-access";
     if (ctx.model) threadParams.model = ctx.model;
+    // Phaethon's tools, which Codex runs by asking Phaethon (item/tool/call).
+    const dynamicTools = (ctx.tools?.defs ?? []).map((d) => ({ type: "function", name: d.name, description: d.description, inputSchema: d.input_schema }));
     let thread: unknown;
     try {
       thread = ctx.resume
-        ? await step(peer.request("thread/resume", { ...threadParams, threadId: ctx.resume }))
-        : await step(peer.request("thread/start", { ...threadParams, ephemeral: false }));
+        ? await step(peer.request("thread/resume", { ...threadParams, threadId: ctx.resume, ...(dynamicTools.length ? { dynamicTools } : {}) }))
+        : await step(peer.request("thread/start", { ...threadParams, ephemeral: false, ...(dynamicTools.length ? { dynamicTools } : {}) }));
     } catch (e) {
       // A thread Codex can't find ("no rollout found…") starts afresh with the conversation as text.
       const gone = ctx.resume !== null && e instanceof RpcError && /no rollout found|not found/i.test(e.message);

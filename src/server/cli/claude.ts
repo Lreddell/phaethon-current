@@ -3,7 +3,7 @@ import type { AgentEvent } from "../../shared/agent.ts";
 import type { Outcome } from "./cli.ts";
 import { abortion, type DriveContext, type Driver, type Invocation } from "./drive.ts";
 import { readLines, sleep, stopGroup } from "./process.ts";
-import { categoryOf, place, ToolEvents, type Granted } from "./tools.ts";
+import { categoryOf, commandLabel, commandLine, place, ToolEvents, type Granted } from "./tools.ts";
 
 /**
  * Claude Code: the official `claude` the person signed in to, run once per
@@ -54,12 +54,31 @@ export function cliArgsFull(resume: string | null): string[] {
   return args;
 }
 
+/**
+ * Phaethon's tools over MCP: only that server (`--strict-mcp-config`), its
+ * tools allowed without asking. `--safe-mode` turns every MCP server off, so
+ * it gives way to the switches that keep the same walls (checked with Claude
+ * Code 2.1.319: no global CLAUDE.md, none of the person's agents, plugins,
+ * skills or output style; `--restricted` still ignores their settings and hooks).
+ */
+export function withPhaethonTools(args: string[], configFile: string): string[] {
+  const out = args.filter((a) => a !== "--safe-mode");
+  out.push("--mcp-config", configFile);
+  const at = out.indexOf("--allowedTools");
+  if (at >= 0) out[at + 1] = `${out[at + 1]},mcp__phaethon`;
+  return out;
+}
+
+/** What `--safe-mode` kept out, kept out by name. */
+export const ISOLATION_ENV = { CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1", CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" };
+
 export function invocation(ctx: DriveContext): Invocation {
-  const args = ctx.fullAccess ? cliArgsFull(ctx.resume) : cliArgs(ctx.resume, ctx.dirs);
+  let args = ctx.fullAccess ? cliArgsFull(ctx.resume) : cliArgs(ctx.resume, ctx.dirs);
+  if (ctx.mcp) args = withPhaethonTools(args, ctx.mcp.configFile);
   if (ctx.model) args.push("--model", ctx.model);
   args.push("--append-system-prompt", ctx.mode);
   if (ctx.reasoning) args.push("--effort", ctx.reasoning);
-  return { args, input: ctx.prompt };
+  return { args, input: ctx.prompt, ...(ctx.mcp ? { env: ISOLATION_ENV } : {}) };
 }
 
 function toolLabel(block: Record<string, unknown>, base: string, granted: Granted): string {
@@ -73,6 +92,8 @@ function toolLabel(block: Record<string, unknown>, base: string, granted: Grante
       return `Searching files for “${s("pattern")}”`;
     case "Glob":
       return `Finding files matching ${s("pattern")}`;
+    case "Bash":
+      return commandLabel(commandLine(input, base, granted));
     case "":
       return "Using a tool";
     default:
@@ -127,7 +148,9 @@ export class ClaudeParser {
           .filter((b) => b.type === "tool_use")
           .flatMap((b) => {
             const name = typeof b.name === "string" ? b.name : "";
-            return this.#tools.start(typeof b.id === "string" ? b.id : "", categoryOf(name), b.input, toolLabel(b, this.base, this.granted));
+            const id = typeof b.id === "string" ? b.id : "";
+            if (name.startsWith("mcp__")) return this.#tools.startNamed(id, name, b.input);
+            return this.#tools.start(id, categoryOf(name), b.input, toolLabel(b, this.base, this.granted));
           });
       case "user":
         return content(v.message)

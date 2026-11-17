@@ -10,7 +10,7 @@ import type { Outcome } from "./cli.ts";
 import { abortion, finishChild, type DriveContext, type Driver, type Invocation } from "./drive.ts";
 import { JsonRpcPeer, RpcError } from "./jsonrpc.ts";
 import { sleep, stopGroup } from "./process.ts";
-import { place, shownPath, ToolEvents, type Granted } from "./tools.ts";
+import { commandLabel, commandLine, place, shownPath, ToolEvents, type Granted } from "./tools.ts";
 
 /**
  * Gemini CLI through the Agent Client Protocol (`gemini --acp`), one agent
@@ -99,7 +99,20 @@ export function invocation(ctx: DriveContext): Invocation {
 
 // ---- Permission policy (after T3's clientPolicy.ts) ----
 
-type ToolCall = { toolCallId?: unknown; title?: unknown; kind?: unknown; status?: unknown; locations?: unknown; rawInput?: unknown };
+type ToolCall = { toolCallId?: unknown; title?: unknown; kind?: unknown; status?: unknown; locations?: unknown; rawInput?: unknown; content?: unknown };
+
+/** The text a tool call reports back (ACP `content` blocks): what a command printed. */
+function contentText(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((c) => {
+      const inner = (c as { type?: unknown; content?: { type?: unknown; text?: unknown } } | null)?.content;
+      return (c as { type?: unknown } | null)?.type === "content" && inner?.type === "text" && typeof inner.text === "string" ? inner.text : "";
+    })
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
 
 const READ_KINDS = new Set(["read", "search", "think"]);
 
@@ -180,7 +193,7 @@ export class GeminiUpdates {
         if (typeof input.pattern === "string") return `Searching files for “${input.pattern}”`;
         return file ? `Listing ${shownPath(file, this.base, this.granted).shown}` : "Searching files";
       case "command":
-        return "Running a command";
+        return commandLabel(commandLine(this.#command(call), this.base, this.granted));
       case "write":
         return file ? place("Changing", file, this.base, this.granted) : "Changing files";
       default:
@@ -188,10 +201,20 @@ export class GeminiUpdates {
     }
   }
 
+  /** What a shell step ran: its `command`, else the title Gemini CLI gives it ("ls -la [in src] (List files)") without the folder and the note. */
+  #command(call: ToolCall): { command?: unknown } {
+    const input = (call.rawInput && typeof call.rawInput === "object" ? call.rawInput : {}) as Record<string, unknown>;
+    if (typeof input.command === "string" && input.command.trim()) return { command: input.command };
+    const title = typeof call.title === "string" ? call.title : "";
+    return { command: title.replace(/\s+\[(?:in|current working directory) [^\]]*\](?:\s+\([^)]*\))?\s*$/, "") };
+  }
+
   #end(call: ToolCall): AgentEvent[] {
     const status: ToolStatus | null = call.status === "completed" ? "success" : call.status === "failed" ? "failed" : null;
     if (!status) return [];
-    return this.#tools.end(String(call.toolCallId ?? ""), status, status === "failed" ? "Tool reported an error" : undefined);
+    // What a command printed, for its output; ToolEvents keeps it only for commands.
+    const printed = contentText(call.content);
+    return this.#tools.end(String(call.toolCallId ?? ""), status, printed || (status === "failed" ? "Tool reported an error" : undefined));
   }
 
   update(u: Record<string, unknown>): AgentEvent[] {
@@ -212,7 +235,7 @@ export class GeminiUpdates {
         const input = (call.rawInput && typeof call.rawInput === "object" ? call.rawInput : {}) as Record<string, unknown>;
         const file = locationsOf(call)[0] ?? (["file_path", "absolute_path", "dir_path", "path"].map((k) => input[k]).find((v) => typeof v === "string" && v) as string | undefined);
         this.#afterTool = true;
-        const target = file ? { path: file } : input;
+        const target = category === "command" ? this.#command(call) : file ? { path: file } : input;
         return [...this.#tools.start(String(call.toolCallId ?? ""), category, target, this.#label(call, category, file)), ...this.#end(call)];
       }
       case "tool_call_update":
@@ -277,7 +300,7 @@ export const drive: Driver = async (gc, ctx, emit) => {
         peer.request("initialize", {
           protocolVersion: ACP_PROTOCOL_VERSION,
           clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-          clientInfo: { name: "phaethon", version: process.env.PHAETHON_VERSION ?? "0.2.0" },
+          clientInfo: { name: "phaethon", version: process.env.PHAETHON_VERSION ?? "0.3.0" },
         }),
       );
     } catch (e) {
@@ -286,12 +309,15 @@ export const drive: Driver = async (gc, ctx, emit) => {
     if (init === "abort") return await stop();
     if (init === "ended") return incomplete();
     const canLoad = (init as { agentCapabilities?: { loadSession?: unknown } } | undefined)?.agentCapabilities?.loadSession === true;
+    // Phaethon's tools over local MCP, when the agent takes an HTTP server.
+    const httpMcp = (init as { agentCapabilities?: { mcpCapabilities?: { http?: unknown } } } | undefined)?.agentCapabilities?.mcpCapabilities?.http === true;
+    const mcpServers = ctx.mcp && httpMcp ? [{ type: "http", name: "phaethon", url: ctx.mcp.url, headers: [{ name: "Authorization", value: `Bearer ${ctx.mcp.token}` }] }] : [];
 
     if (ctx.resume) {
       // An agent that can't load sessions can't resume this one: start afresh with the conversation as text.
       if (!canLoad) return { kind: "failed", message: "Error resuming session: this Gemini CLI can’t load earlier sessions.", stale: true };
       try {
-        const loaded = await step(peer.request("session/load", { sessionId: ctx.resume, cwd: ctx.workingDir, mcpServers: [] }));
+        const loaded = await step(peer.request("session/load", { sessionId: ctx.resume, cwd: ctx.workingDir, mcpServers }));
         if (loaded === "abort") return await stop();
         if (loaded === "ended") return incomplete();
       } catch (e) {
@@ -302,7 +328,7 @@ export const drive: Driver = async (gc, ctx, emit) => {
     } else {
       let created: unknown;
       try {
-        created = await step(peer.request("session/new", { cwd: ctx.workingDir, mcpServers: [] }));
+        created = await step(peer.request("session/new", { cwd: ctx.workingDir, mcpServers }));
       } catch (e) {
         return { kind: "failed", message: rpcText(e), notLoggedIn: isAuthError(e) };
       }

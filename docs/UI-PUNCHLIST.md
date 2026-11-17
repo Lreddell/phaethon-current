@@ -128,3 +128,11 @@ Every ask since the UI complaints began, in order. Status: `done` (merged in mai
 | 85 | The make flow says you can close it, but closing stopped the run and nothing showed its progress | done — runs live in a job store; closing keeps them going; Study lists them under "Making now" with progress and Stop; the chat card shows its own |
 | 86 | Pressing Make again starts a second run | done — the same course, test and kind joins the run under way |
 | 87 | No word when a run finishes out of sight | done — a toast with "Open" |
+
+## Round 8 — responsiveness and resizing
+
+| # | Ask | Status |
+|---|-----|--------|
+| 88 | The UI holds up at every window size from the 380 × 480 minimum up, and while resizing | done — the sidebar floats over the page in a window too narrow to dock it; Settings swaps its nav column for a section menu; Courses shows list or course; the viewer narrows or covers the page; narrow title rows wrap; page actions go icon-only in a narrow title bar; `e2e/responsive.spec.ts` sweeps every page at 380, 560 and 800 wide |
+| 89 | Resizing the window lags | done — a 126-message conversation with 713 formulas restyled and laid out all ~43,000 elements every frame (Tailwind's viewport breakpoints also flip a whole-document "fonts changed" restyle); messages now skip style, layout and paint off screen (`render-near-view`): a resize drag's main-thread work 9.7 s → 2.2 s, worst frame 301 → 66 ms |
+| 90 | A wide matrix runs off the edge of a narrow window | done — display math shrinks to fit down to 70 %, then scrolls with a faded edge |

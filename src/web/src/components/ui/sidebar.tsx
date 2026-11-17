@@ -4,6 +4,7 @@ import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { RowGlideContext } from "./row-highlight";
 import { ScrollArea } from "./scroll-area";
 import { Skeleton } from "./skeleton";
 
@@ -13,14 +14,23 @@ import { Skeleton } from "./skeleton";
  * resets), and groups of 28 px menu rows with hover actions and badges.
  * Open state lives in the caller (the nav store) so shortcuts and the header
  * can toggle it; width is kept on this computer.
+ *
+ * A window too narrow to hold the panel and a `PAGE_MIN_WIDTH` page side by
+ * side is compact: the panel floats over the page instead of pushing it (a
+ * popup layer with its shadow, a faint scrim behind), and Esc or a click
+ * outside puts it away.
  */
 
 const WIDTH_KEY = "phaethon.sidebarWidth";
 export const SIDEBAR_WIDTH_DEFAULT = 248;
 export const SIDEBAR_WIDTH_MIN = 216;
 export const SIDEBAR_WIDTH_MAX = 420;
+/** The narrowest page the docked panel leaves beside it; a window that can't hold both is compact. */
+export const PAGE_MIN_WIDTH = 520;
 
-const clampWidth = (w: number) => Math.round(Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, w)));
+/** The widest the panel may be dragged in this window, so dragging never pushes the page under `PAGE_MIN_WIDTH`. */
+const widthCap = () => (typeof window === "undefined" ? SIDEBAR_WIDTH_MAX : Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, window.innerWidth - PAGE_MIN_WIDTH)));
+const clampWidth = (w: number, max = SIDEBAR_WIDTH_MAX) => Math.round(Math.max(SIDEBAR_WIDTH_MIN, Math.min(max, w)));
 
 function readWidth(): number {
   try {
@@ -38,6 +48,8 @@ function applyWidth(w: number) {
 
 type SidebarContextValue = {
   open: boolean;
+  /** Floating over the page (a compact window) rather than docked beside it. */
+  floating: boolean;
   toggle: () => void;
   width: number;
   setWidth: (w: number, persist?: boolean) => void;
@@ -51,11 +63,32 @@ export function useSidebar(): SidebarContextValue {
   return ctx;
 }
 
-export function SidebarProvider({ open, onToggle, className, children, ...props }: React.ComponentProps<"div"> & { open: boolean; onToggle: () => void }) {
+export function SidebarProvider({
+  open,
+  onToggle,
+  floating = false,
+  onCompactChange,
+  className,
+  children,
+  ...props
+}: React.ComponentProps<"div"> & {
+  open: boolean;
+  onToggle: () => void;
+  /** Float over the page instead of docking (the caller's answer to `onCompactChange`). */
+  floating?: boolean;
+  /** Called with whether the window is too narrow to dock the panel beside a `PAGE_MIN_WIDTH` page, now and on every resize that changes it. */
+  onCompactChange?: (compact: boolean) => void;
+}) {
   const [width, setWidthState] = React.useState(readWidth);
   React.useLayoutEffect(() => applyWidth(width), [width]);
+  const report = React.useEffectEvent(() => onCompactChange?.(window.innerWidth < width + PAGE_MIN_WIDTH));
+  React.useLayoutEffect(() => {
+    report();
+    window.addEventListener("resize", report);
+    return () => window.removeEventListener("resize", report);
+  }, [width]);
   const setWidth = React.useCallback((w: number, persist = true) => {
-    const next = clampWidth(w);
+    const next = clampWidth(w, persist ? SIDEBAR_WIDTH_MAX : widthCap());
     setWidthState(next);
     if (!persist) return;
     try {
@@ -65,35 +98,70 @@ export function SidebarProvider({ open, onToggle, className, children, ...props 
       // Private window: the width lasts for the session.
     }
   }, []);
-  const value = React.useMemo(() => ({ open, toggle: onToggle, width, setWidth }), [open, onToggle, width, setWidth]);
+  const value = React.useMemo(() => ({ open, floating, toggle: onToggle, width, setWidth }), [open, floating, onToggle, width, setWidth]);
   return (
     <SidebarContext value={value}>
-      <div className={cn("group/sidebar-wrapper flex h-full w-full", className)} data-slot="sidebar-wrapper" data-sidebar-state={open ? "expanded" : "collapsed"} {...props}>
+      <div
+        className={cn("group/sidebar-wrapper flex h-full w-full", className)}
+        data-slot="sidebar-wrapper"
+        data-sidebar-state={open ? "expanded" : "collapsed"}
+        data-sidebar-floating={floating || undefined}
+        {...props}
+      >
         {children}
       </div>
     </SidebarContext>
   );
 }
 
-/** Offcanvas: collapsing slides it out and makes it inert, so focus and clicks never land in it. */
+/**
+ * Offcanvas: collapsing slides it out and makes it inert, so focus and clicks
+ * never land in it. Floating, it takes no room: it slides out over the page,
+ * takes focus (its selected row, else itself), and Esc or a click on the
+ * scrim puts it away and hands focus back to whatever opened it.
+ */
 export function Sidebar({ className, children, ...props }: React.ComponentProps<"div">) {
-  const { open } = useSidebar();
+  const { open, floating, toggle } = useSidebar();
+  const container = React.useRef<HTMLDivElement>(null);
+  const opener = React.useRef<HTMLElement | null>(null);
+  const out = floating && open;
+  React.useEffect(() => {
+    if (!out) return;
+    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const el = container.current;
+    (el?.querySelector<HTMLElement>("[data-active=true]") ?? el)?.focus({ preventScroll: true });
+    return () => {
+      // Back to the toggle (or whatever opened it), unless focus already moved on to what was chosen.
+      if (el?.contains(document.activeElement) || document.activeElement === document.body) opener.current?.focus({ preventScroll: true });
+    };
+  }, [out]);
   return (
     <div
-      className="group peer relative h-full shrink-0 text-sidebar-foreground"
+      className={cn("group peer relative h-full shrink-0 text-sidebar-foreground", floating && "z-(--z-sheet)")}
       data-slot="sidebar"
       data-state={open ? "expanded" : "collapsed"}
       data-collapsible={open ? "" : "offcanvas"}
+      data-floating={floating || undefined}
     >
       <div
         data-slot="sidebar-gap"
-        className="h-full w-(--sidebar-width) transition-[width] duration-200 ease-drawer group-data-[collapsible=offcanvas]:w-0 group-data-[resizing=true]/sidebar-wrapper:transition-none"
+        className="h-full w-(--sidebar-width) transition-[width] duration-200 ease-drawer group-data-[collapsible=offcanvas]:w-0 group-data-floating:w-0 group-data-floating:transition-none group-data-[resizing=true]/sidebar-wrapper:transition-none"
       />
+      {out ? <div aria-hidden data-slot="sidebar-scrim" className="fixed inset-x-0 bottom-0 top-(--titlebar-height) bg-foreground/6" onPointerDown={toggle} /> : null}
       <div
+        ref={container}
         data-slot="sidebar-container"
         inert={!open}
+        tabIndex={out ? -1 : undefined}
+        onKeyDown={(e) => {
+          if (!out || e.key !== "Escape" || e.defaultPrevented) return;
+          e.preventDefault();
+          e.stopPropagation();
+          toggle();
+        }}
         className={cn(
-          "absolute inset-y-0 left-0 flex w-(--sidebar-width) border-r transition-[translate] duration-200 ease-drawer group-data-[collapsible=offcanvas]:-translate-x-full group-data-[resizing=true]/sidebar-wrapper:transition-none",
+          "absolute inset-y-0 left-0 flex w-(--sidebar-width) border-r outline-none transition-[translate] duration-200 ease-drawer group-data-[collapsible=offcanvas]:-translate-x-full group-data-[resizing=true]/sidebar-wrapper:transition-none",
+          "group-data-floating:max-w-(--viewport-max-width) group-data-floating:shadow-popup group-data-[collapsible=offcanvas]:group-data-floating:shadow-none",
           className,
         )}
         {...props}
@@ -108,7 +176,7 @@ export function Sidebar({ className, children, ...props }: React.ComponentProps<
 
 /** The panel's right edge: drag to resize, double-click for the default width. */
 export function SidebarRail({ className }: { className?: string }) {
-  const { open, width, setWidth } = useSidebar();
+  const { open, floating, width, setWidth } = useSidebar();
   const drag = React.useRef<{ x: number; w: number; id: number; wrapper: HTMLElement | null } | null>(null);
   const end = (e: React.PointerEvent<HTMLDivElement>, commit: boolean) => {
     const d = drag.current;
@@ -118,10 +186,10 @@ export function SidebarRail({ className }: { className?: string }) {
     document.body.style.removeProperty("cursor");
     document.body.style.removeProperty("user-select");
     if (e.currentTarget.hasPointerCapture(d.id)) e.currentTarget.releasePointerCapture(d.id);
-    if (commit) setWidth(d.w + e.clientX - d.x);
+    if (commit) setWidth(Math.min(widthCap(), d.w + e.clientX - d.x));
     else setWidth(d.w, false);
   };
-  if (!open) return null;
+  if (!open || floating) return null;
   return (
     <div
       role="separator"
@@ -160,8 +228,9 @@ export function SidebarHeader({ className, ...props }: React.ComponentProps<"div
   return <div className={cn("flex shrink-0 flex-col gap-1", className)} data-slot="sidebar-header" {...props} />;
 }
 
+/** One row under a hairline, `--footer-height` tall like every bottom bar beside the sidebar. */
 export function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
-  return <div className={cn("flex shrink-0 flex-col gap-1 border-t p-2", className)} data-slot="sidebar-footer" {...props} />;
+  return <div className={cn("flex h-(--footer-height) shrink-0 flex-col justify-center border-t px-2", className)} data-slot="sidebar-footer" {...props} />;
 }
 
 /** The scrolling middle. `scrollRef` is the scrolling element (for a windowed list); `fade="end"` fades only the bottom edge, under a sticky top row. */
@@ -181,7 +250,7 @@ export function SidebarGroupLabel({ className, render, ...props }: useRender.Com
   return useRender({
     defaultTagName: "div",
     render,
-    props: mergeProps({ className: cn("group/label flex h-7 shrink-0 items-center gap-1 px-2 text-subtle-foreground text-xs", className), "data-slot": "sidebar-group-label" }, props),
+    props: mergeProps({ className: cn("group/label flex h-7 shrink-0 items-center gap-1 px-2 type-label", className), "data-slot": "sidebar-group-label" }, props),
   });
 }
 
@@ -211,7 +280,7 @@ export function SidebarMenuItem({ className, ...props }: React.ComponentProps<"l
 }
 
 export const sidebarMenuButtonVariants = cva(
-  "peer/menu-button flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-md text-left outline-hidden transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset disabled:pointer-events-none disabled:opacity-60 data-[active=true]:bg-row-selected data-[active=true]:text-foreground [&>svg]:shrink-0 [&>svg]:text-icon-muted",
+  "peer/menu-button flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-md text-left outline-hidden transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset disabled:pointer-events-none disabled:opacity-60 data-[active=true]:bg-row-selected data-[active=true]:text-foreground data-glide:data-[active=true]:bg-transparent data-glide:data-[active=true]:hover:bg-transparent [&>svg]:shrink-0 [&>svg]:text-icon-muted",
   {
     variants: {
       size: {
@@ -227,18 +296,26 @@ export const sidebarMenuButtonVariants = cva(
   },
 );
 
+/**
+ * A 28 px row. `isActive` marks the selected one; inside a `RowHighlightGroup`
+ * (or with `glide`) the list draws that fill as one highlight that glides
+ * between rows (components/ui/row-highlight.tsx) instead of the row's own.
+ */
 export function SidebarMenuButton({
   isActive = false,
+  glide,
   size,
   tone,
   className,
   render,
   ...props
-}: useRender.ComponentProps<"button"> & { isActive?: boolean } & VariantProps<typeof sidebarMenuButtonVariants>) {
+}: useRender.ComponentProps<"button"> & { isActive?: boolean; glide?: boolean } & VariantProps<typeof sidebarMenuButtonVariants>) {
+  const inGroup = React.use(RowGlideContext);
   const defaults = {
     type: "button" as const,
     className: cn(sidebarMenuButtonVariants({ size, tone }), className),
     "data-active": isActive || undefined,
+    "data-glide": (glide ?? inGroup) || undefined,
     "data-slot": "sidebar-menu-button",
   };
   return useRender({
