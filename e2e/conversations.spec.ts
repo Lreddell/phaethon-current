@@ -29,8 +29,9 @@ async function send(page: Page, text: string) {
 const words = (tag: string, n: number) => Array.from({ length: n }, (_, i) => `${tag}${i}`).join(" ");
 
 test("two conversations in one space reply at once, and switching clears nothing", async ({ page }) => {
-  const first = words("alpha", 40);
-  const second = words("beta", 40);
+  // Long enough that both are still streaming while the second starts, even on a busy machine.
+  const first = words("alpha", 120);
+  const second = words("beta", 120);
   core = await startCore({
     script: {
       claude: true,
@@ -78,11 +79,11 @@ test("two conversations in one space reply at once, and switching clears nothing
   await expect(page.locator('[data-role="user"]')).toContainText("first question");
 
   // Both finish. The one on screen is simply done; the other one has a new reply.
-  await expect(page.locator('[data-role="assistant"]').last()).toContainText("alpha39", { timeout: 15_000 });
-  await expect(sidebar.getByRole("button", { name: "second question, new reply" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('[data-role="assistant"]').last()).toContainText("alpha119", { timeout: 20_000 });
+  await expect(sidebar.getByRole("button", { name: "second question, new reply" })).toBeVisible({ timeout: 20_000 });
   await expect(sidebar.getByRole("button", { name: /^first question/ })).toHaveAccessibleName("first question");
   await sidebar.getByRole("button", { name: /^second question/ }).click();
-  await expect(page.locator('[data-role="assistant"]').last()).toContainText("beta39");
+  await expect(page.locator('[data-role="assistant"]').last()).toContainText("beta119");
   await expect(sidebar.getByRole("button", { name: /^second question/ })).toHaveAccessibleName("second question");
 
   // Each reply went to its own conversation, and the model was asked once for each.
@@ -117,12 +118,13 @@ test("stopping one conversation leaves the other replying", async ({ page }) => 
 test("New chat leaves nothing behind until something is sent", async ({ page }) => {
   core = await startCore({ script: { claude: true, steps: [{ text: "Hi." }] } });
   await core.open(page);
-  const newChat = page.getByRole("button", { name: "New chat", exact: true }).first();
+  // The sidebar's New chat (the title bar's + after the tabs does the same, unpressed).
+  const newChat = nav(page).getByRole("button", { name: "New chat", exact: true }).first();
   for (let i = 0; i < 3; i++) await newChat.click();
   await expect(page.getByRole("heading", { name: "Where should we begin?" })).toBeVisible();
-  // No draft row under the space: the New chat row itself is selected, and no conversation is saved.
+  // No draft row under the space: the New chat button itself is pressed, and no conversation is saved.
   await expect(nav(page).getByRole("list", { name: "School conversations" }).getByRole("button", { name: "New chat", exact: true })).toHaveCount(0);
-  await expect(newChat).toHaveAttribute("aria-current", "page");
+  await expect(newChat).toHaveAttribute("aria-pressed", "true");
   expect(savedConversations(core)).toEqual([]);
   await send(page, "now it counts");
   await expect(page.getByText("Hi.")).toBeVisible();

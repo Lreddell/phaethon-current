@@ -248,18 +248,26 @@ export function mergeSaved(live: Message[], saved: UiMessage[], keepLive = false
       agree = false;
       return m;
     }
+    // A message the save doesn't change keeps its identity, so it doesn't render again.
     if (m.role === "user" && s.role === "user") {
       if (!aligned && s.text !== m.text) {
         agree = false;
         return m;
       }
-      return { ...m, index: s.index, at: m.at ?? s.at, attachments: s.attachments.map((a, j) => ({ ...a, previewUrl: m.attachments[j]?.previewUrl })) };
+      const attachments = s.attachments.map((a, j) => ({ ...a, previewUrl: m.attachments[j]?.previewUrl }));
+      const same = m.index === s.index && (m.at ?? s.at) === m.at && sameAttachments(m.attachments, attachments);
+      return same ? m : { ...m, index: s.index, at: m.at ?? s.at, attachments };
     }
     if (m.role === "assistant" && s.role === "assistant") {
-      return { ...m, index: s.index, at: m.at ?? s.at, question: m.question ?? s.question };
+      const same = m.index === s.index && (m.at ?? s.at) === m.at && (m.question ?? s.question) === m.question;
+      return same ? m : { ...m, index: s.index, at: m.at ?? s.at, question: m.question ?? s.question };
     }
     return m;
   });
+}
+
+function sameAttachments(a: Attachment[], b: Attachment[]): boolean {
+  return a.length === b.length && a.every((x, i) => x.name === b[i]!.name && x.path === b[i]!.path && x.mediaType === b[i]!.mediaType && x.previewUrl === b[i]!.previewUrl);
 }
 
 /** What the timeline draws for a reply, in order: consecutive tool records gathered into one work group. */
@@ -339,6 +347,16 @@ export function recordText(r: UiRecord, spaceName: (id: string) => string = (id)
       return `Question: ${r.question}`;
     case "progress":
       return r.text;
+    case "memory":
+      return r.action === "closed" ? `Done: ${r.text}${r.outcome ? `, ${r.outcome}` : ""}` : `${r.action === "updated" ? "Updated memory" : "Remembered"}: ${r.text}`;
+    case "person":
+      return `${r.action === "created" ? "Added to people" : "Updated"}: ${r.name}`;
+    case "profile":
+      return `Added to ${r.scope === "vault" ? "your" : "this space’s"} profile: ${r.text}`;
+    case "mailDraft":
+      return r.intent === "send" ? "An email is ready to send" : "An email draft is ready";
+    case "schedule":
+      return `Suggested schedule: ${r.title}, ${r.when}`;
   }
 }
 

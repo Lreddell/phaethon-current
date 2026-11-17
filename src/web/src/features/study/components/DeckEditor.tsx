@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
-import { Header } from "@/app/Header";
+import { ActionLabel, Header } from "@/app/Header";
 import { useNav } from "@/app/store";
 import { cleanMessage, FieldError, SurfaceError } from "@/components/errors";
 import { Icon } from "@/components/icon";
@@ -34,7 +34,7 @@ const CELL =
  * front stays the same.
  */
 export function DeckEditor({ space, path, onBack, open }: { space: SpaceView; path: string | null; onBack: () => void; open: (s: StudyScreen) => void }) {
-  const deck = useLoad<DeckView | null>(() => (path ? studyDeck(space.id, path) : Promise.resolve(null)), [space.id, path]);
+  const deck = useLoad<DeckView | null>(() => (path ? studyDeck(space.id, path) : Promise.resolve(null)), [space.id, path], "study:deck");
   const skeleton = useDelayed(deck.loading && !deck.data && !!path);
   const [title, setTitle] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
@@ -110,7 +110,7 @@ export function DeckEditor({ space, path, onBack, open }: { space: SpaceView; pa
             {savedPath && !dirty ? (
               <Button size="sm" variant="outline" onClick={() => open({ kind: "review", paths: [savedPath], title: title.trim() })}>
                 <Icon icon={icons.play} />
-                Review
+                <ActionLabel>Review</ActionLabel>
               </Button>
             ) : null}
             <Button size="sm" pending={saving} disabled={!dirty && !!savedPath} onClick={() => void save()}>
@@ -136,7 +136,7 @@ export function DeckEditor({ space, path, onBack, open }: { space: SpaceView; pa
                 <input
                   aria-label="Deck name"
                   placeholder="Deck name"
-                  className="w-full bg-transparent font-medium text-foreground text-lg tracking-title outline-none placeholder:text-subtle-foreground"
+                  className="w-full bg-transparent type-title outline-none placeholder:text-subtle-foreground"
                   value={title}
                   maxLength={120}
                   autoFocus={!path}

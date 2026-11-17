@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { useDelayed } from "@/hooks/use-delayed";
 import { cn } from "@/lib/utils";
-import { CardBlock, ConfirmDialog, CopyButton, Field, Loader, Row, SettingsCard, Status, useLoad, Well } from "../ui";
+import { ConfirmDialog, CopyButton, Loader, Row, RowDetail, SettingsGroup, Status, useLoad } from "../ui";
 import {
   CLI_IDS,
   CLI_INFO,
@@ -79,7 +79,7 @@ function UsageBar({ w }: { w: UsageWindow }) {
 }
 
 function Usage({ id }: { id: string }) {
-  const usage = useLoad(() => instanceUsage(id), [id]);
+  const usage = useLoad(() => instanceUsage(id), [id], "agents:usage");
   const waiting = useDelayed(usage.loading && !usage.data);
   if (usage.error && !usage.data) return <RowError className="h-5" message="Couldn’t load usage" onRetry={() => void usage.reload()} />;
   if (!usage.data) {
@@ -153,7 +153,6 @@ function InstanceRow({ i, current, many, onChanged }: { i: InstanceView; current
 
   return (
     <Row
-      className="min-h-10 py-1.5"
       label={
         <span className="flex min-w-0 items-center gap-2">
           <Truncate className="min-w-0">{i.config.name}</Truncate>
@@ -163,7 +162,7 @@ function InstanceRow({ i, current, many, onChanged }: { i: InstanceView; current
             </Badge>
           ) : null}
           {i.readOnly && !/system/i.test(i.config.name) ? <span className="shrink-0 font-normal text-subtle-foreground text-xs">System</span> : null}
-          <Status tone={status.tone} className="min-w-0 text-xs">
+          <Status tone={status.tone} className="min-w-0">
             <Truncate className="min-w-0">{status.text}</Truncate>
           </Status>
         </span>
@@ -231,10 +230,12 @@ function AddAccount({ cli, onChanged }: { cli: CliId; onChanged: () => Promise<v
   const id = `new-account-${cli}`;
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="flex h-8 w-fit items-center gap-2 rounded-md text-primary text-sm transition-opacity hover:opacity-80">
-        <Icon icon={icons.add} className="size-4" />
-        Add account
-      </button>
+      <div className="flex h-9 items-center px-3">
+        <button type="button" onClick={() => setOpen(true)} className="flex h-7 w-fit items-center gap-1.5 rounded-md text-primary text-sm transition-opacity hover:opacity-80">
+          <Icon icon={icons.add} className="size-4" />
+          Add account
+        </button>
+      </div>
     );
   }
   const submit = async () => {
@@ -267,9 +268,9 @@ function AddAccount({ cli, onChanged }: { cli: CliId; onChanged: () => Promise<v
               void submit();
             }}
           >
-            <Input id={id} autoFocus value={name} maxLength={80} placeholder="Work" aria-invalid={error ? true : undefined} onChange={(e) => setName(e.target.value)} />
+            <Input id={id} size="sm" autoFocus value={name} maxLength={80} placeholder="Work" aria-invalid={error ? true : undefined} onChange={(e) => setName(e.target.value)} />
             <Button
-              size="sm"
+              size="xs"
               variant="ghost"
               onClick={() => {
                 setOpen(false);
@@ -278,7 +279,7 @@ function AddAccount({ cli, onChanged }: { cli: CliId; onChanged: () => Promise<v
             >
               Cancel
             </Button>
-            <Button type="submit" size="sm" pending={busy}>
+            <Button type="submit" size="xs" pending={busy}>
               Add
             </Button>
           </form>
@@ -289,54 +290,82 @@ function AddAccount({ cli, onChanged }: { cli: CliId; onChanged: () => Promise<v
   );
 }
 
-function CliCard({ cli, status, instances, onChanged, onRecheck, rechecking }: { cli: CliId; status: CliStatus | undefined; instances: InstanceView[]; onChanged: () => Promise<void>; onRecheck: () => void; rechecking: boolean }) {
+/** One coding agent in the list: its glyph, name, the account in use and its state on one row; install steps or its accounts open under it. */
+function CliRow({
+  cli,
+  status,
+  instances,
+  open,
+  onToggle,
+  onChanged,
+  onRecheck,
+  rechecking,
+}: {
+  cli: CliId;
+  status: CliStatus | undefined;
+  instances: InstanceView[];
+  open: boolean;
+  onToggle: () => void;
+  onChanged: () => Promise<void>;
+  onRecheck: () => void;
+  rechecking: boolean;
+}) {
   const info = CLI_INFO[cli];
   const installed = status?.installed ?? instances.some((i) => i.installed);
   const mine = instances.filter((i) => i.config.cli === cli);
   const cur = currentInstance(instances, cli);
+  const st = installed && cur ? instanceStatus(cur) : null;
   return (
-    <SettingsCard
-      icon={<ProviderIcon id={cli} />}
-      title={info.name}
-      description={
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="shrink-0">{info.company}</span>
-          <span className="text-subtle-foreground">·</span>
-          <Status tone={installed ? "ready" : "neutral"}>{installed ? "Installed" : "Not installed"}</Status>
-        </span>
-      }
-      action={
-        !installed ? (
-          <Button size="sm" variant="outline" onClick={onRecheck} disabled={rechecking} className="min-w-28">
-            {rechecking ? <Spinner /> : <Icon icon={icons.retry} />}
-            {rechecking ? "Checking…" : "Check again"}
-          </Button>
-        ) : null
-      }
-    >
-      {!installed ? (
-        <Field label="Install">
-          <Well>
-            <Icon icon={icons.terminal} className="size-4 text-muted-foreground" />
-            <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap py-1 font-mono text-xs">{info.install}</code>
-            <CopyButton text={info.install} label="Copy command" />
-          </Well>
-        </Field>
-      ) : (
-        <CardBlock title={mine.length > 1 ? "Accounts" : undefined} className={cn("gap-1", mine.length > 1 ? "pt-3" : "pt-2")}>
-          <div className="flex flex-col divide-y">
-            <AnimatePresence initial={false}>
-              {mine.map((i) => (
-                <motion.div key={i.config.id} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.18 }}>
-                  <InstanceRow i={i} current={cur?.config.id === i.config.id} many={mine.length > 1} onChanged={onChanged} />
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
-          <AddAccount cli={cli} onChanged={onChanged} />
-        </CardBlock>
-      )}
-    </SettingsCard>
+    <div data-agent={cli}>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={onToggle}
+        className="flex h-10 w-full min-w-0 items-center gap-3 px-3 text-left outline-none transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      >
+        <ProviderIcon id={cli} className="size-4 shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-sm">{info.name}</span>
+        {installed && mine.length > 1 && cur && cur.config.name !== info.name && !open ? <span className="hidden max-w-40 truncate text-muted-foreground text-xs sm:block">{cur.config.name}</span> : null}
+        {st ? (
+          <Status tone={st.tone} className="max-w-56 shrink-0">
+            <Truncate className="min-w-0">{st.text}</Truncate>
+          </Status>
+        ) : (
+          <Status tone={installed ? "ready" : "neutral"} className="shrink-0">
+            {installed ? "Installed" : "Not installed"}
+          </Status>
+        )}
+        <Icon icon={icons.chevronDown} className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-200", !open && "-rotate-90")} />
+      </button>
+      <AnimatePresence initial={false}>
+        {open ? (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18 }} className="overflow-hidden">
+            <RowDetail>
+              {!installed ? (
+                <Row label="Install" description={<code className="block overflow-x-auto whitespace-nowrap font-mono">{info.install}</code>}>
+                  <CopyButton text={info.install} label="Copy command" />
+                  <Button size="xs" variant="outline" onClick={onRecheck} disabled={rechecking}>
+                    {rechecking ? <Spinner /> : <Icon icon={icons.retry} />}
+                    {rechecking ? "Checking…" : "Check again"}
+                  </Button>
+                </Row>
+              ) : (
+                <>
+                  <AnimatePresence initial={false}>
+                    {mine.map((i) => (
+                      <motion.div key={i.config.id} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.18 }}>
+                        <InstanceRow i={i} current={cur?.config.id === i.config.id} many={mine.length > 1} onChanged={onChanged} />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                  <AddAccount cli={cli} onChanged={onChanged} />
+                </>
+              )}
+            </RowDetail>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
   );
 }
 
@@ -344,8 +373,9 @@ export function AgentsSection() {
   const state = useLoad<Data>(async () => {
     const [clis, instances] = await Promise.all([cliStatuses(), listInstances()]);
     return { clis, instances };
-  });
+  }, [], "agents:status");
   const [rechecking, setRechecking] = useState(false);
+  const [open, setOpen] = useState<CliId | null>(null);
   const refresh = async () => {
     try {
       const [clis, instances] = await Promise.all([cliStatuses(), listInstances()]);
@@ -360,36 +390,33 @@ export function AgentsSection() {
     setRechecking(false);
   };
   return (
-    <Loader state={state} errorTitle="Couldn’t check the coding agents" skeleton={<div className="flex flex-col gap-3"><SkeletonCard rows={2} /><SkeletonCard rows={2} /><SkeletonCard rows={1} /></div>}>
+    <Loader state={state} errorTitle="Couldn’t check the coding agents" skeleton={<SkeletonCard rows={4} className="rounded-card" />}>
       {({ clis, instances }) => {
         const others = clis.filter((c) => !c.supported || !(CLI_IDS as readonly string[]).includes(c.id));
         return (
-          <>
+          <SettingsGroup data-testid="agents-list">
             {CLI_IDS.map((cli) => (
-              <CliCard
+              <CliRow
                 key={cli}
                 cli={cli}
                 status={clis.find((c) => c.id === cli)}
                 instances={instances}
+                open={open === cli}
+                onToggle={() => setOpen((o) => (o === cli ? null : cli))}
                 onChanged={refresh}
                 onRecheck={() => void recheck()}
                 rechecking={rechecking}
               />
             ))}
-            {others.length ? (
-              <SettingsCard icon={<Icon icon={icons.pending} />} title="Coming later">
-                <div className="flex flex-col">
-                  {others.map((c) => (
-                    <div key={c.id} className="flex h-11 items-center gap-3">
-                      <ProviderIcon id={c.id} />
-                      <span className="flex-1 truncate text-sm">{c.name}</span>
-                      <span className="text-muted-foreground text-sm">Not supported yet</span>
-                    </div>
-                  ))}
-                </div>
-              </SettingsCard>
-            ) : null}
-          </>
+            {others.map((c) => (
+              <div key={c.id} className="flex h-10 items-center gap-3 px-3 text-muted-foreground">
+                <ProviderIcon id={c.id} className="size-4 shrink-0 opacity-60" />
+                <span className="min-w-0 flex-1 truncate text-sm">{c.name}</span>
+                <span className="shrink-0 text-subtle-foreground text-xs">Not supported yet</span>
+                <span aria-hidden className="size-4 shrink-0" />
+              </div>
+            ))}
+          </SettingsGroup>
         );
       }}
     </Loader>

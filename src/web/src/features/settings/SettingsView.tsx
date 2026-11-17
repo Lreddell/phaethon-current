@@ -1,11 +1,14 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { api } from "@/app/api";
-import { Header } from "@/app/Header";
+import { HeaderTitle } from "@/app/Header";
 import { type SettingsSection, useNav } from "@/app/store";
 import { Icon, type IconData } from "@/components/icon";
 import { icons } from "@/components/icons";
+import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
+import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
+import { RowHighlightGroup } from "@/components/ui/row-highlight";
 import { cn } from "@/lib/utils";
 import { AboutSection } from "./AboutSection";
 import { cliStatuses } from "./agents/api";
@@ -19,6 +22,11 @@ import { SpacesSection } from "./spaces/SpacesSection";
 import { type Crumb, CrumbContext } from "./ui";
 
 const CourseSettings = lazy(() => import("@/features/courses/CourseSettings").then((m) => ({ default: m.CourseSettings })));
+const NotificationsSection = lazy(() => import("./NotificationsSection").then((m) => ({ default: m.NotificationsSection })));
+const MemorySection = lazy(() => import("./life/MemorySection").then((m) => ({ default: m.MemorySection })));
+const PeopleSection = lazy(() => import("./life/PeopleSection").then((m) => ({ default: m.PeopleSection })));
+const MailSection = lazy(() => import("./life/MailSection").then((m) => ({ default: m.MailSection })));
+const AutomationsSection = lazy(() => import("./life/AutomationsSection").then((m) => ({ default: m.AutomationsSection })));
 
 /**
  * Settings is a page inside the shell (docs/UI-REBUILD.md › Settings, after
@@ -31,34 +39,17 @@ const CourseSettings = lazy(() => import("@/features/courses/CourseSettings").th
 export const SECTIONS: { id: SettingsSection; label: string; icon: IconData; group: string }[] = [
   { id: "general", label: "General", icon: icons.mode, group: "Preferences" },
   { id: "appearance", label: "Appearance", icon: icons.appearance, group: "Preferences" },
+  { id: "notifications", label: "Notifications", icon: icons.notifications, group: "Preferences" },
   { id: "providers", label: "Providers", icon: icons.model, group: "Models" },
   { id: "agents", label: "Coding agents", icon: icons.terminal, group: "Models" },
   { id: "spaces", label: "Spaces", icon: icons.deck, group: "Workspace" },
   { id: "courses", label: "Courses", icon: icons.courses, group: "Workspace" },
+  { id: "memory", label: "Memory", icon: icons.memory, group: "You" },
+  { id: "people", label: "People", icon: icons.people, group: "You" },
+  { id: "mail", label: "Mail & connectors", icon: icons.mail, group: "You" },
+  { id: "automations", label: "Automations", icon: icons.automation, group: "You" },
   { id: "about", label: "About", icon: icons.info, group: "Phaethon" },
 ];
-
-/** True when something layered (dialog, popover, menu, listbox) is open and should take Esc itself. */
-function layerOpen(): boolean {
-  return !!document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]');
-}
-
-function useEscToClose(close: () => void) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented || layerOpen()) return;
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) {
-        t.blur();
-        return;
-      }
-      e.preventDefault();
-      close();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [close]);
-}
 
 type Marker = { kind: "dot"; tone: "success" | "warning" | "info"; label: string } | { kind: "count"; text: string };
 
@@ -114,41 +105,87 @@ function Nav({ section, onReset }: { section: SettingsSection; onReset: () => vo
   const markers = useMarkers(section);
   const groups = [...new Set(SECTIONS.map((s) => s.group))];
   return (
-    <nav aria-label="Settings" className="flex w-64 shrink-0 flex-col overflow-y-auto border-r px-3 py-3 max-[1180px]:w-52">
+    <nav aria-label="Settings" className="hidden w-52 shrink-0 flex-col overflow-y-auto border-r px-3 pt-(--pane-top) pb-3 @2xl/settings:flex @5xl/settings:w-64">
       <button
         type="button"
         onClick={close}
-        className="group flex h-7 items-center gap-2 rounded-md px-2 text-muted-foreground text-sm transition-colors hover:bg-accent hover:text-foreground"
+        className="group flex h-(--pane-row-height) shrink-0 items-center gap-2 rounded-md px-2 text-muted-foreground text-sm transition-colors hover:bg-accent hover:text-foreground"
       >
         <Icon icon={icons.arrowLeft} className="size-4" />
         Back
         <Kbd className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">Esc</Kbd>
       </button>
-      {groups.map((g) => (
-        <div key={g} className="mt-4 flex flex-col gap-px">
-          <h2 className="flex h-7 items-center px-2 text-subtle-foreground text-xs">{g}</h2>
-          {SECTIONS.filter((s) => s.group === g).map((s) => {
-            const active = s.id === section;
-            return (
-              <button
-                key={s.id}
-                type="button"
-                aria-current={active ? "page" : undefined}
-                onClick={() => (active ? onReset() : open(s.id))}
-                className={cn(
-                  "relative isolate flex h-7 items-center gap-2 rounded-md px-2 text-sm transition-colors",
-                  active ? "text-foreground" : "text-foreground hover:bg-accent",
-                )}
-              >
-                {active ? <motion.span layoutId="settings-nav" transition={{ type: "spring", stiffness: 480, damping: 38 }} className="absolute inset-0 -z-10 rounded-md bg-row-selected" /> : null}
-                <Icon icon={s.icon} className={cn("size-4", active ? "text-foreground" : "text-muted-foreground")} />
-                {s.label}
-                <MarkerView m={markers[s.id]} />
-              </button>
-            );
-          })}
-        </div>
-      ))}
+      <RowHighlightGroup className="flex flex-col">
+        {groups.map((g) => (
+          <div key={g} className="mt-4 flex flex-col gap-px">
+            <h2 className="flex h-7 items-center px-2 type-label">{g}</h2>
+            {SECTIONS.filter((s) => s.group === g).map((s) => {
+              const active = s.id === section;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  aria-current={active ? "page" : undefined}
+                  data-glide=""
+                  data-active={active || undefined}
+                  onClick={() => (active ? onReset() : open(s.id))}
+                  className={cn(
+                    "flex h-7 items-center gap-2 rounded-md px-2 text-sm transition-colors",
+                    active ? "text-foreground" : "text-foreground hover:bg-accent",
+                  )}
+                >
+                  <Icon icon={s.icon} className={cn("size-4", active ? "text-foreground" : "text-muted-foreground")} />
+                  {s.label}
+                  <MarkerView m={markers[s.id]} />
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </RowHighlightGroup>
+    </nav>
+  );
+}
+
+/**
+ * Settings too narrow for its nav column: Back, and the section on show as a
+ * menu of every section, in the nav's groups, above the section.
+ */
+function SectionBar({ section, onReset }: { section: SettingsSection; onReset: () => void }) {
+  const close = useNav((s) => s.closeSettings);
+  const open = useNav((s) => s.openSettings);
+  const markers = useMarkers(section);
+  const groups = [...new Set(SECTIONS.map((s) => s.group))];
+  const meta = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]!;
+  return (
+    <nav aria-label="Settings" className="flex items-center gap-1 @2xl/settings:hidden">
+      <Button size="icon-sm" variant="ghost-muted" aria-label="Back" onClick={close}>
+        <Icon icon={icons.arrowLeft} />
+      </Button>
+      <Menu>
+        <MenuTrigger render={<Button size="sm" variant="ghost" className="min-w-0 gap-2 px-2" />}>
+          <Icon icon={meta.icon} className="text-muted-foreground" />
+          <span className="truncate">{meta.label}</span>
+          <Icon icon={icons.chevronsUpDown} className="text-muted-foreground" />
+        </MenuTrigger>
+        <MenuPopup align="start" className="w-56">
+          {groups.map((g, i) => (
+            <div key={g}>
+              {i > 0 ? <MenuSeparator /> : null}
+              <MenuGroup>
+                <MenuGroupLabel>{g}</MenuGroupLabel>
+                {SECTIONS.filter((s) => s.group === g).map((s) => (
+                  <MenuItem key={s.id} aria-current={s.id === section ? "page" : undefined} onClick={() => (s.id === section ? onReset() : open(s.id))}>
+                    <Icon icon={s.icon} />
+                    <span className={cn("flex-1", s.id === section && "font-medium")}>{s.label}</span>
+                    <MarkerView m={markers[s.id]} />
+                  </MenuItem>
+                ))}
+              </MenuGroup>
+            </div>
+          ))}
+        </MenuPopup>
+      </Menu>
     </nav>
   );
 }
@@ -169,6 +206,23 @@ function Body({ section }: { section: SettingsSection }) {
           <CourseSettings />
         </Suspense>
       );
+    case "notifications":
+      return (
+        <Suspense fallback={null}>
+          <NotificationsSection />
+        </Suspense>
+      );
+    case "memory":
+    case "people":
+    case "mail":
+    case "automations": {
+      const S = { memory: MemorySection, people: PeopleSection, mail: MailSection, automations: AutomationsSection }[section];
+      return (
+        <Suspense fallback={null}>
+          <S />
+        </Suspense>
+      );
+    }
     case "appearance":
       return <AppearanceSection />;
     case "about":
@@ -178,14 +232,13 @@ function Body({ section }: { section: SettingsSection }) {
 
 export function SettingsView() {
   const section = useNav((s) => s.settings) ?? "general";
-  const close = useNav((s) => s.closeSettings);
   const [crumb, setCrumb] = useState<Crumb>(null);
   // Clicking the section you are in brings back its root view (a space's detail closes).
   const [reset, setReset] = useState(0);
-  useEscToClose(close);
   const meta = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]!;
   const title = (
     <span className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
+      <Icon icon={icons.settings} className="size-4 shrink-0 text-muted-foreground" />
       <span className="min-w-0 truncate text-muted-foreground">Settings</span>
       <span className="text-subtle-foreground">/</span>
       {crumb ? (
@@ -202,8 +255,8 @@ export function SettingsView() {
     </span>
   );
   return (
-    <div className="flex min-h-0 flex-1">
-      <Header title={title} />
+    <div className="@container/settings flex min-h-0 flex-1">
+      <HeaderTitle>{title}</HeaderTitle>
       <Nav section={section} onReset={() => setReset((n) => n + 1)} />
       <div className="page-scroll relative min-h-0 flex-1">
         <motion.div
@@ -211,8 +264,9 @@ export function SettingsView() {
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.18, ease: "easeOut" }}
-          className="relative mx-auto flex w-full max-w-(--settings-max-width) flex-col gap-4 px-8 pt-12 pb-16"
+          className="relative mx-auto flex w-full max-w-(--settings-max-width) flex-col gap-6 px-4 pt-3 pb-12 @2xl/settings:px-8 @2xl/settings:pt-8"
         >
+          <SectionBar section={section} onReset={() => setReset((n) => n + 1)} />
           <CrumbContext value={setCrumb}>
             <Body section={section} />
           </CrumbContext>

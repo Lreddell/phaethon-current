@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useRef, useState, type Ref } from "react";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
-import { SidebarMenuAction } from "@/components/ui/sidebar";
+import { SearchField, SearchFieldAction } from "@/components/ui/search-field";
 import { Spinner } from "@/components/ui/spinner";
 import { errorText } from "@/lib/core";
 import { api } from "../api";
-import { THREAD_PAGE } from "../store";
+import { keysFor } from "../shortcuts";
+import { THREAD_PAGE, useNav } from "../store";
 import { nextResults, type FilterList } from "./paging";
 
 export type { FilterList };
 
 /**
- * The sidebar's filter: the row under New chat that narrows the listed
+ * The sidebar's search: the field beside New chat that narrows the listed
  * conversations by title. Loaded rows are filtered in the list at once; this
  * asks the core (`threads_list` with a query) for matches that aren't loaded,
  * page by page. ⌘K stays the full-text search.
@@ -89,7 +90,12 @@ export function useThreadFilter(query: string, spaceIds: readonly string[]) {
   return { results, loadMore, drop, busy };
 }
 
-/** The filter row: a magnifier in the icon column and "Filter chats"; Escape clears it, ↓ moves into the matches. */
+/**
+ * The sidebar's one search field: typing narrows the space's conversations
+ * by title at once; its keys (⌘K) open the full search, every space and every
+ * message, starting from what was typed. Escape clears, ↓ moves into the
+ * matches, Enter opens the first.
+ */
 export function FilterField({
   value,
   onChange,
@@ -107,50 +113,48 @@ export function FilterField({
   onUp: () => void;
   onEnter: () => void;
 }) {
+  const setPalette = useNav((s) => s.setPalette);
+  const { keys, aria } = keysFor("search");
   return (
-    <div className="group/filter relative flex h-7 items-center rounded-md transition-colors hover:bg-accent has-focus-visible:bg-transparent">
-      <Icon icon={icons.search} className="pointer-events-none absolute left-2 size-4 text-icon-muted" />
-      <input
-        ref={inputRef}
-        type="text"
-        role="searchbox"
-        aria-label="Filter chats"
-        placeholder="Filter chats"
-        autoComplete="off"
-        spellCheck={false}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            if (!value) return;
-            e.preventDefault();
-            e.stopPropagation();
-            onChange("");
-          } else if (e.key === "ArrowDown") {
-            e.preventDefault();
-            onDown();
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            onUp();
-          } else if (e.key === "Enter") {
-            e.preventDefault();
-            onEnter();
-          }
-        }}
-        className="h-7 w-full min-w-0 rounded-md bg-transparent pr-7 pl-8 text-sm text-foreground outline-none placeholder:text-subtle-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
-      />
-      {value ? (
-        <span className="absolute right-1 flex items-center">
-          {busy ? (
-            <Spinner size="xs" className="mr-1 text-subtle-foreground" />
+    <SearchField
+      className="flex-1"
+      ref={inputRef}
+      aria-label="Search chats"
+      aria-keyshortcuts={aria}
+      placeholder="Search"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onClear={() => onChange("")}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          onDown();
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          onUp();
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          onEnter();
+        }
+      }}
+      trailing={
+        value ? (
+          busy ? (
+            <Spinner size="xs" className="mx-1 text-subtle-foreground" />
           ) : (
-            <SidebarMenuAction aria-label="Clear filter" onClick={() => onChange("")}>
+            <SearchFieldAction aria-label="Clear search" onClick={() => onChange("")}>
               <Icon icon={icons.close} />
-            </SidebarMenuAction>
-          )}
-        </span>
-      ) : null}
-    </div>
+            </SearchFieldAction>
+          )
+        ) : (
+          <SearchFieldAction tabIndex={-1} aria-label="Search everything" onClick={() => setPalette(true)}>
+            {keys.map((k) => (
+              <span key={k}>{k}</span>
+            ))}
+          </SearchFieldAction>
+        )
+      }
+    />
   );
 }
 

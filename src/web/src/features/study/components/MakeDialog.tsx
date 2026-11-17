@@ -160,8 +160,8 @@ export function MakeDialog({
   }, [open, draft.course, sources.data]);
 
   const course = sources.data?.find((s) => s.folder === draft.course);
-  const scope = useLoad(() => (open && draft.course ? studyScope(space, draft.course, pick.pick) : Promise.resolve(null)), [open, space, draft.course]);
-  const planned = useLoad(() => (open ? planExamsGet(space).catch(() => []) : Promise.resolve([])), [open, space]);
+  const scope = useLoad(() => (open && draft.course ? studyScope(space, draft.course, pick.pick) : Promise.resolve(null)), [open, space, draft.course, pick.pick], "study:scope");
+  const planned = useLoad(() => (open ? planExamsGet(space).catch(() => []) : Promise.resolve([])), [open, space], "plan:exams");
   const options: ExamOption[] = useMemo(
     () => (course ? examOptions({ name: course.name, folder: course.folder }, scope.data ?? null, planned.data ?? []) : []),
     [course, scope.data, planned.data],
@@ -233,14 +233,17 @@ export function MakeDialog({
       {/* Anchored near the top (not centred) so its top edge stays put as the steps change height. */}
       <DialogPopup className="row-span-3 row-start-1 mt-(--dialog-top) max-h-(--dialog-anchored-max-height) max-w-xl self-start rounded-panel" showCloseButton={false} aria-label={label}>
         <form onSubmit={onSubmit} className="contents">
-          <DialogHeader className="gap-4 p-6 pr-6 pb-4">
+          <DialogHeader className="@container/makehead gap-4 p-6 pr-6 pb-4">
             <div className="flex items-start gap-3">
-              <DialogTitle className="min-w-0 flex-1 font-medium text-base tracking-title">{label}</DialogTitle>
+              <DialogTitle className="min-w-0 flex-1">{label}</DialogTitle>
               <DialogClose render={<Button size="icon-sm" variant="ghost-muted" aria-label="Close" className="-mt-1 -mr-2" />}>
                 <Icon icon={icons.close} />
               </DialogClose>
             </div>
-            {/* Steps, with the kind beside them while it can still change: one row, so the header keeps its height. */}
+            {/*
+              Steps, with the kind beside them while it can still change: one row, so the header keeps its height.
+              In a narrow dialog only the current step keeps its name and the kinds show their icons.
+            */}
             <div className="flex h-8 items-center justify-between gap-3">
               <Steps step={step} done={phase === "done"} onStep={(i) => (i === 0 && phase === "how" ? go("what", -1) : undefined)} labels={["What", quiz ? "Questions" : "Cards", "Make"]} />
               {phase === "what" || phase === "how" ? (
@@ -248,11 +251,11 @@ export function MakeDialog({
 <TabsList aria-label="Kind">
                   <TabsTab value="quiz">
                     <Icon icon={icons.quiz} />
-                    Quiz
+                    <span className="@max-md/makehead:sr-only">Quiz</span>
                   </TabsTab>
                   <TabsTab value="deck">
                     <Icon icon={icons.deck} />
-                    Cards
+                    <span className="@max-md/makehead:sr-only">Cards</span>
                   </TabsTab>
                 </TabsList>
 </Tabs>
@@ -427,7 +430,7 @@ function Steps({ step, done, labels, onStep }: { step: number; done: boolean; la
         const past = i < step || (done && i === step);
         return (
           <li key={l} className="flex items-center gap-2">
-            {i > 0 ? <span className={cn("h-px w-6 bg-border transition-colors duration-200", i <= step && "bg-primary/50")} aria-hidden /> : null}
+            {i > 0 ? <span className={cn("h-px w-6 bg-border transition-colors duration-200 @max-md/makehead:w-3", i <= step && "bg-primary/50")} aria-hidden /> : null}
             <button
               type="button"
               disabled={i >= step}
@@ -452,7 +455,7 @@ function Steps({ step, done, labels, onStep }: { step: number; done: boolean; la
                   </span>
                 )}
               </AnimatePresence>
-              {l}
+              <span className={cn(i !== step && "@max-md/makehead:sr-only")}>{l}</span>
             </button>
           </li>
         );
@@ -1036,7 +1039,7 @@ function RunView({ progress, fraction, started, quiz, course, exam, stopping }: 
     <div className="flex flex-col gap-4 pb-2" aria-live="polite" data-testid="make-progress">
       <div className="flex items-center gap-3">
         <span className={cn("min-w-0 flex-1 truncate text-base", !stopping && "text-shimmer")}>{stopping ? "Stopping…" : quiz ? "Making your quiz…" : "Making your cards…"}</span>
-        <span className="shrink-0 text-muted-foreground text-sm tabular-nums">{`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`}</span>
+        <span className="shrink-0 text-muted-foreground text-sm type-live">{`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`}</span>
       </div>
       <div className="relative h-1 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(fraction * 100)}>
         <div className="h-full rounded-full bg-ink transition-[width] duration-500 ease-(--ease-out-soft)" style={{ width: `${Math.max(2, fraction * 100)}%` }} />
@@ -1096,7 +1099,7 @@ function DoneView({ done, quiz }: { done: Done; quiz: boolean }) {
   return (
     <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, ease: EASE }} className="flex flex-col gap-4 pb-2">
       <div>
-        <p className="font-medium text-base tabular-nums tracking-title">{quiz ? `Made a quiz of ${plural(made, "question")}` : `Made ${plural(made, "card")}`}</p>
+        <p className="type-heading tabular-nums">{quiz ? `Made a quiz of ${plural(made, "question")}` : `Made ${plural(made, "card")}`}</p>
         {g?.exam ? <p className="mt-0.5 text-muted-foreground text-sm [overflow-wrap:anywhere]">{`For ${g.exam}${g.scope ? `: ${g.scope}` : ""}.`}</p> : null}
       </div>
       <Card variant="well" className="gap-0 px-4 py-2">

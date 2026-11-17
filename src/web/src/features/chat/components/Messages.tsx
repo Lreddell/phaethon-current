@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { type ReactNode, useRef, useState } from "react";
+import { memo, type ReactNode, useRef, useState } from "react";
 import { useNav, useOpenThread } from "@/app/store";
 import { ClampedText, SurfaceError } from "@/components/errors";
 import { FileChip, copyText } from "@/components/file-chip";
@@ -24,8 +24,10 @@ import { AccessCard, ApprovalCard, QuestionCard, RecordLine } from "./PendingCar
 import { useSmoothText } from "./smooth";
 import { ProgressLine, trackSpan, useNow, WorkGroup } from "./WorkGroup";
 
+/** One formatter for every message's time (a long conversation shows hundreds). */
+const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 function clock(at?: number): string {
-  return at ? new Date(at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
+  return at ? timeFormat.format(at) : "";
 }
 
 /**
@@ -147,7 +149,8 @@ function Attachments({ list, space }: { list: Attachment[]; space: string }) {
   );
 }
 
-export function UserMessage({ m, space, onEdit, canEdit }: { m: Ask; space: string; onEdit: () => void; canEdit: boolean }) {
+/** Memoized, like `AssistantMessage`. */
+export const UserMessage = memo(function UserMessage({ m, space, onEdit, canEdit }: { m: Ask; space: string; onEdit: (m: Ask) => void; canEdit: boolean }) {
   // A message sent in this window grows in from the composer; loaded ones just appear.
   const fresh = m.index === undefined;
   return (
@@ -159,7 +162,7 @@ export function UserMessage({ m, space, onEdit, canEdit }: { m: Ask; space: stri
             Copy
           </ContextMenuItem>
           {canEdit ? (
-            <ContextMenuItem onClick={onEdit}>
+            <ContextMenuItem onClick={() => onEdit(m)}>
               <Icon icon={icons.edit} />
               Edit and resend
             </ContextMenuItem>
@@ -168,9 +171,10 @@ export function UserMessage({ m, space, onEdit, canEdit }: { m: Ask; space: stri
       }
     >
       <motion.div
-        className="group/msg flex origin-bottom-right flex-col items-end pb-5"
+        className="group/msg render-near-view flex origin-bottom-right flex-col items-end pb-5"
         data-role="user"
         data-turn={m.key}
+        data-msg={m.key}
         initial={fresh ? { opacity: 0, y: 12, scale: 0.96 } : false}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ type: "spring", duration: 0.32, bounce: 0.18 }}
@@ -178,15 +182,15 @@ export function UserMessage({ m, space, onEdit, canEdit }: { m: Ask; space: stri
         <div className="relative flex max-w-3/4 flex-col items-end gap-1.5">
           {m.attachments.length ? <Attachments list={m.attachments} space={space} /> : null}
           {m.text.trim() ? (
-            <div className="max-w-full rounded-2xl bg-message px-3.5 py-2 text-message-foreground text-sm">
+            <div className="max-w-full rounded-2xl bg-message px-3.5 py-2 text-base text-message-foreground">
               <ClampedText text={m.text} lines={12} />
             </div>
           ) : null}
           {/* Under the bubble, out of the flow, so a hover row never pushes the reply down. */}
           <div className="absolute top-full right-0 mt-0.5 flex h-6 items-center gap-0.5 whitespace-nowrap opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100">
-            <span className="mr-1 text-subtle-foreground text-xs tabular-nums">{clock(m.at)}</span>
+            <span className="mr-1 type-meta">{clock(m.at)}</span>
             {canEdit ? (
-              <MessageAction label="Edit and resend" onClick={onEdit}>
+              <MessageAction label="Edit and resend" onClick={() => onEdit(m)}>
                 <Icon icon={icons.edit} />
               </MessageAction>
             ) : null}
@@ -196,7 +200,7 @@ export function UserMessage({ m, space, onEdit, canEdit }: { m: Ask; space: stri
       </motion.div>
     </MessageMenu>
   );
-}
+});
 
 /** Reasoning in plain steps: one per sentence or line, the last one live while it is still being written. */
 function thoughtSteps(text: string): string[] {
@@ -239,7 +243,8 @@ function StreamingText({ text, space, messageKey }: { text: string; space: strin
   return <Markdown text={shown} space={space} streaming messageKey={messageKey} />;
 }
 
-export function AssistantMessage({
+/** Memoized: while a reply streams, the replies above it don't render again. */
+export const AssistantMessage = memo(function AssistantMessage({
   m,
   space,
   last,
@@ -293,7 +298,7 @@ export function AssistantMessage({
         </>
       }
     >
-      <div className="group/msg relative flex flex-col" data-role="assistant" data-status={m.status}>
+      <div className="group/msg render-near-view relative flex flex-col" data-role="assistant" data-status={m.status} data-msg={m.key}>
         <div ref={body} className="flex flex-col">
           {segs.map((s) => {
             switch (s.type) {
@@ -327,7 +332,7 @@ export function AssistantMessage({
                   </p>
                 );
               case "record":
-                return <RecordLine key={s.key} record={s.record} spaceName={spaceName} />;
+                return <RecordLine key={s.key} record={s.record} spaceName={spaceName} space={space} />;
             }
           })}
         </div>
@@ -387,10 +392,10 @@ export function AssistantMessage({
                 ) : null}
               </>
             ) : null}
-            <span className="ml-1 text-subtle-foreground text-xs tabular-nums opacity-0 transition-opacity group-hover/msg:opacity-100">{clock(m.at)}</span>
+            <span className="ml-1 type-meta opacity-0 transition-opacity group-hover/msg:opacity-100">{clock(m.at)}</span>
           </div>
         ) : null}
       </div>
     </MessageMenu>
   );
-}
+});

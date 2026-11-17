@@ -11,8 +11,12 @@
  *   "settings"       buttons (phaethon-actions)
  *   "error"/"rate"   a failed reply (no API key / rate limit)
  *   "slow"           a long reply, slow enough to stop
+ *   "run"/"build"    a coding agent's turn: commands that print, one that fails
  * `#mock&thread=pending` loads a conversation that ends with an unanswered question;
- * `&thread=empty` an empty one; `&thread=long` a long one.
+ * `&thread=empty` an empty one; `&thread=long` a long one; `&thread=agent` a coding agent's turn
+ * with the commands it ran; `&thread=huge` opens a long one (a third of `&turns=<n>`, 300 by default)
+ * and makes the next listed conversation the very long one, both with code, math, diagrams, images
+ * and tool steps, for measuring opening and switching.
  */
 import { zipSync, strToU8 } from "fflate";
 
@@ -155,6 +159,34 @@ const PENDING: UiMessage[] = [
   },
 ];
 
+const AGENT_REPLY = "The summary builds. `latexmk` needed a second pass for the cross-references, and one test of the flashcard export was failing because the deck file had a trailing blank line; I left the deck alone and noted it below.\n\n- **summary.pdf** is in `notes/` (3 pages).\n- `pnpm test` passes except `export trims blank lines`.";
+
+/** A coding agent's commands, as they are saved: the command line, and what it printed. */
+const AGENT_RECORDS: UiMessage["records"] = [
+  { kind: "tool", id: "a1", category: "list", label: "Listing files", target: "notes", status: "success" },
+  { kind: "tool", id: "a2", category: "command", label: "Running command", target: "git status --short", status: "success", detail: " M notes/week6.md\n?? notes/summary.tex" },
+  { kind: "tool", id: "a3", category: "read", label: "Reading file", target: "notes/week6.md", status: "success" },
+  {
+    kind: "tool",
+    id: "a4",
+    category: "command",
+    label: "Running command",
+    target: "cd notes && latexmk -xelatex -interaction=nonstopmode -halt-on-error summary.tex && latexmk -c",
+    status: "success",
+    detail: "Rc files read:\n  NONE\nLatexmk: This is Latexmk, John Collins, 7 Apr. 2026. Version 4.86.\nLatexmk: applying rule 'xelatex'...\nRule 'xelatex':  Reasons for rerun\nChanged files or newly in use/created:\n  summary.aux\n\nOutput written on summary.xdv (3 pages, 41208 bytes).\nLatexmk: All targets (summary.pdf) are up-to-date",
+  },
+  { kind: "tool", id: "a5", category: "command", label: "Running command", target: "rg -n \"injective\" notes", status: "success", detail: "notes/week6.md:3:- Injective: f(a) = f(b) implies a = b.\nnotes/week6.md:9:- Is the composition of two injections injective? (Yes.)" },
+  { kind: "tool", id: "a6", category: "command", label: "Running command", target: "pnpm test --run export", status: "failed", detail: "FAIL  export.test.ts > export trims blank lines\nAssertionError: expected 'Front\\n\\n' to be 'Front'\n\nTest Files  1 failed (1)\n     Tests  1 failed | 11 passed (12)" },
+  { kind: "tool", id: "a7", category: "command", label: "Running command", target: "ls notes", status: "success" },
+  { kind: "tool", id: "a8", category: "command", label: "Running command", status: "success", detail: "summary.pdf\nsummary.tex\nweek6.md" },
+  { kind: "tool", id: "a9", category: "write", label: "Changing file", target: "notes/summary.tex", status: "success" },
+];
+
+const AGENT: UiMessage[] = [
+  { role: "user", text: "Build my week 6 summary as a PDF and run the tests.", attachments: [], index: 0, records: [], at: now - 900_000 },
+  { role: "assistant", text: AGENT_REPLY, attachments: [], index: 1, records: AGENT_RECORDS, at: now - 880_000 },
+];
+
 function longThread(): UiMessage[] {
   const out: UiMessage[] = [];
   for (let i = 0; i < 8; i++) {
@@ -164,9 +196,58 @@ function longThread(): UiMessage[] {
   return out;
 }
 
+/** A picture with its size in its own bytes, the way a reply's image arrives: it only takes room once decoded. */
+function figure(n: number, h: number): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="${h}"><rect width="640" height="${h}" fill="hsl(${(n * 47) % 360} 60% 85%)"/><text x="24" y="48" font-size="28" font-family="sans-serif">Figure ${n}</text></svg>`;
+  return `data:image/svg+xml;base64,${btoa(svg)}`;
+}
+
+/**
+ * A very long conversation (`#mock&thread=huge`, `&turns=<n>`, 300 by default): every kind of
+ * content that grows after it is first laid out (highlighted code, math, a diagram, images), long
+ * prose and tool steps, so opening it and switching back can be measured.
+ */
+function hugeThread(turns: number, seed = 0): UiMessage[] {
+  const out: UiMessage[] = [];
+  const prose =
+    "The idea is to keep each step small enough that you could check it on your own, and to say why it follows before moving on. A proof is a chain of these, and the chain is only as strong as the step you skipped. ";
+  for (let i = 0; i < turns; i++) {
+    const at = now - (turns - i) * 300_000;
+    const kind = (i + seed) % 6;
+    const ask = kind === 3 ? `Can you go over part ${i + 1} again, slowly? ${prose.repeat(2)}` : `Question ${i + 1}: what about case ${i + 1}?`;
+    out.push({ role: "user", text: ask, attachments: [], index: i * 2, records: [], at });
+    const parts: string[] = [`**Turn ${i + 1}.** ${prose.repeat(1 + (i % 3))}`];
+    if (kind === 0) parts.push("```python\n" + Array.from({ length: 6 + (i % 9) }, (_, k) => `def step_${k}(n):\n    return sum(x * x for x in range(n)) + ${k}`).join("\n") + "\n```");
+    if (kind === 1) parts.push(`$$\n\\sum_{k=1}^{${i + 2}} k^2 = \\frac{n(n+1)(2n+1)}{6} \\quad\\text{and}\\quad \\int_0^1 x^{${i % 7}}\\,dx = \\frac{1}{${(i % 7) + 1}}\n$$\n\nInline too: $f(a) = f(b) \\Rightarrow a = b$ for every $a, b \\in \\mathbb{Z}$.`);
+    if (kind === 2) parts.push(`![Figure ${i}](${figure(i, 180 + (i % 5) * 40)})`);
+    if (kind === 4) parts.push("| Step | Claim | Why |\n|---|---|---|\n" + Array.from({ length: 4 }, (_, k) => `| ${k + 1} | $P(${k})$ holds | case ${k} |`).join("\n"));
+    if (kind === 5) parts.push(prose.repeat(6));
+    if (i % 40 === 7) parts.push("```mermaid\nflowchart LR\n  a[Base case] --> b[Hypothesis]\n  b --> c[Step]\n  c --> d[Conclusion]\n```");
+    parts.push(`So case ${i + 1} holds, and the next one follows the same way.`);
+    const records: UiMessage["records"] =
+      i % 2 === 0
+        ? [
+            { kind: "tool", id: `h${i}a`, category: "search", label: `Searching files for “case ${i + 1}”`, status: "success" },
+            { kind: "tool", id: `h${i}b`, category: "read", label: "Reading file", target: `${CS101}/files/Lecture 7 Functions.md`, status: "success" },
+          ]
+        : [];
+    out.push({ role: "assistant", text: parts.join("\n\n"), attachments: [], index: i * 2 + 1, records, at: at + 20_000 });
+  }
+  // The newest turn ends with a diagram, so the bottom itself grows after the first paint.
+  const last = out[out.length - 1]!;
+  last.text += "\n\n```mermaid\nflowchart TD\n  a[Claim] --> b[Base case]\n  a --> c[Inductive step]\n  b --> d[Done]\n  c --> d\n```";
+  return out;
+}
+
+const huge = hash.get("thread") === "huge";
+const hugeTurns = Number(hash.get("turns")) || 300;
+
 /** Saved conversations by `space/thread`; the shell mock's newest school conversation has the full script. */
 const threads: Record<string, UiMessage[]> = {
-  "school/1762800000000": hash.get("thread") === "pending" ? PENDING : hash.get("thread") === "empty" ? [] : hash.get("thread") === "long" ? longThread() : SAVED,
+  "school/1762800000000":
+    hash.get("thread") === "pending" ? PENDING : hash.get("thread") === "empty" ? [] : hash.get("thread") === "long" ? longThread() : hash.get("thread") === "agent" ? AGENT : huge ? hugeThread(Math.round(hugeTurns / 3), 2) : SAVED,
+  // With `thread=huge` the next conversation is the very long one, so opening it from the sidebar is its first load.
+  ...(huge ? { "school/1762700000000": hugeThread(hugeTurns) } : {}),
 };
 
 /** A conversation the shell mock lists but this file has no script for: its two listed lines. */
@@ -302,6 +383,21 @@ async function run(args: Record<string, unknown>) {
     const reply = ok ? "Saved. The notes now use math notation and end with the composition rule." : "Nothing was changed. Tell me what you’d like different and I’ll try again.";
     await say(ch, turn, reply);
     return end(ch, space, turn, saveTurn(space, prompt, `I’ll tidy the definitions and add the composition rule.\n\n${reply}`, [{ kind: "approval", path: "notes/week6.md", action: "replace", allowed: ok }], replaceFrom));
+  }
+
+  if (p.includes("run") || p.includes("build")) {
+    const records: UiMessage["records"] = [];
+    for (const r of AGENT_RECORDS) {
+      if (r.kind !== "tool" || turn.cancelled) continue;
+      ch.send({ kind: "toolStart", id: r.id, category: r.category, label: r.label, target: r.target } satisfies AgentEvent);
+      ch.send({ kind: "tool", label: r.category === "command" && r.target ? `Running ${r.target}` : r.label } satisfies AgentEvent);
+      await sleep(r.id === "a4" ? 2600 : 500);
+      ch.send({ kind: "toolEnd", id: r.id, status: r.status === "running" ? "success" : r.status, detail: r.detail } satisfies AgentEvent);
+      ch.send({ kind: "record", record: r } satisfies AgentEvent);
+      records.push(r);
+    }
+    await say(ch, turn, AGENT_REPLY);
+    return end(ch, space, turn, saveTurn(space, prompt, AGENT_REPLY, records, replaceFrom));
   }
 
   if (p.includes("calendar")) {

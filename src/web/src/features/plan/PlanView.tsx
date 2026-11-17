@@ -1,7 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
-import { Header } from "@/app/Header";
+import { ActionLabel, Header } from "@/app/Header";
 import { useNav } from "@/app/store";
 import { cleanMessage, FieldError, SurfaceError } from "@/components/errors";
 import { Icon, type IconData } from "@/components/icon";
@@ -15,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverPopup, PopoverTrigger } from "@/components/ui/popover";
+import { RowHighlightGroup } from "@/components/ui/row-highlight";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -55,7 +56,7 @@ export function PlanView({ space }: { space: SpaceView }) {
     const decks: Record<string, string[]> = {};
     for (const d of overview?.decks ?? []) if (d.course) (decks[d.course] ??= []).push(d.title);
     return { courses: up.courses, items: up.items, exams, state, decks };
-  }, [space.id]);
+  }, [space.id], "plan:data");
   const skeleton = useDelayed(data.loading && !data.data);
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState<Filter>({ show: "all", course: null });
@@ -141,7 +142,7 @@ export function PlanView({ space }: { space: SpaceView }) {
           d && !nothing ? (
             <Button size="sm" variant="outline" disabled={saving} onClick={() => void save()}>
               {saving ? <Spinner size="sm" /> : <Icon icon={icons.fileText} />}
-              {saving ? "Saving…" : "Save as note"}
+              <ActionLabel>{saving ? "Saving…" : "Save as note"}</ActionLabel>
             </Button>
           ) : null
         }
@@ -245,7 +246,7 @@ function daysText(days: number[]): string {
 function SideLabel({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
     <div className="mt-6 flex h-7 items-center justify-between px-2 first:mt-0">
-      <h3 className="text-subtle-foreground text-xs">{children}</h3>
+      <h3 className="type-label">{children}</h3>
       {action}
     </div>
   );
@@ -256,8 +257,11 @@ function SideRow({ selected, onClick, lead, label, trail }: { selected?: boolean
     <button
       type="button"
       aria-pressed={selected}
+      // The group's one highlight draws the selected fill and glides it between rows.
+      data-glide=""
+      data-active={selected || undefined}
       onClick={onClick}
-      className={cn("flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring", selected && "bg-row-selected hover:bg-row-selected")}
+      className={cn("flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring", selected && "hover:bg-transparent")}
     >
       <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">{lead}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -298,22 +302,26 @@ function Filters({
       {/* Narrow pages filter from the bar above the agenda instead. */}
       <div className="flex flex-col @max-3xl/page:hidden">
         <SideLabel>Show</SideLabel>
-        {SHOW.map((s) => (
-          <SideRow key={s.value} selected={filter.show === s.value} onClick={() => onFilter({ ...filter, show: s.value })} lead={<Icon icon={s.icon} className="size-4" />} label={s.label} trail={c[s.value] || ""} />
-        ))}
+        <RowHighlightGroup className="flex flex-col">
+          {SHOW.map((s) => (
+            <SideRow key={s.value} selected={filter.show === s.value} onClick={() => onFilter({ ...filter, show: s.value })} lead={<Icon icon={s.icon} className="size-4" />} label={s.label} trail={c[s.value] || ""} />
+          ))}
+        </RowHighlightGroup>
         {colors.size ? (
           <>
             <SideLabel>Courses</SideLabel>
-            {[...colors].map(([name, color]) => (
-              <SideRow
-                key={name}
-                selected={filter.course === name}
-                onClick={() => onFilter({ ...filter, course: filter.course === name ? null : name })}
-                lead={<span className="size-2 rounded-full" style={{ backgroundColor: color }} />}
-                label={name}
-                trail={c.courses.get(name) ?? ""}
-              />
-            ))}
+            <RowHighlightGroup className="flex flex-col">
+              {[...colors].map(([name, color]) => (
+                <SideRow
+                  key={name}
+                  selected={filter.course === name}
+                  onClick={() => onFilter({ ...filter, course: filter.course === name ? null : name })}
+                  lead={<span className="size-2 rounded-full" style={{ backgroundColor: color }} />}
+                  label={name}
+                  trail={c.courses.get(name) ?? ""}
+                />
+              ))}
+            </RowHighlightGroup>
           </>
         ) : null}
       </div>
@@ -497,9 +505,9 @@ function Today({
   const study = entries.length - due;
   return (
     <Card data-testid="plan-today">
-      <div className="flex items-start gap-4 px-5 pt-5 pb-3">
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <h2 className="font-medium text-base tracking-title">
+      <div className="flex flex-wrap items-start gap-x-4 gap-y-2 px-5 pt-5 pb-3">
+        <div className="flex min-w-40 flex-1 flex-col gap-1">
+          <h2 className="type-heading">
             Today <span className="font-normal text-muted-foreground">· {shortDay(today)}</span>
           </h2>
           <p className="text-muted-foreground text-sm">{entries.length ? [due ? `${due} due` : null, study ? `${study} to study` : null].filter(Boolean).join(" · ") : "A clear day"}</p>
@@ -680,7 +688,7 @@ function ExamForm({ draft, courses, onSave, onCancel, onDelete }: { draft: Draft
       }}
     >
       <div className="flex items-center gap-3 border-b px-5 pt-5 pb-4">
-        <h2 className="min-w-0 flex-1 font-medium text-base tracking-title">{draft.id ? "Edit exam" : "Add exam"}</h2>
+        <h2 className="min-w-0 flex-1 type-title">{draft.id ? "Edit exam" : "Add exam"}</h2>
         <Button size="icon-xs" variant="ghost-muted" aria-label="Close" onClick={onCancel}>
           <Icon icon={icons.close} />
         </Button>

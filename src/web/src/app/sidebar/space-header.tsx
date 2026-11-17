@@ -16,7 +16,7 @@ import { useNav, type ThreadRow } from "../store";
 import { WorkingMark } from "./rows";
 
 /** How many of a space's conversations are replying and waiting, and whether any has a new reply. */
-function useSpaceActivity(space: string, threads: ThreadRow[] | undefined) {
+export function useSpaceActivity(space: string, threads: ThreadRow[] | undefined) {
   const prefix = `${space}/`;
   const local = useChats(
     useShallow((s) => {
@@ -108,13 +108,13 @@ export const SpaceHeader = memo(function SpaceHeader({ space, index, folded, cou
             {activity.waiting && !filtering ? <span className="size-1.5 rounded-full bg-warning" aria-label={`${activity.waiting} need you`} /> : null}
             {activity.unread && !filtering ? <span className="size-1.5 rounded-full bg-primary" aria-label="New reply" /> : null}
             {count ? (
-              <span className="min-w-4 text-right text-2xs text-subtle-foreground tabular-nums" aria-label={filtering ? `${count} matching` : `${count} conversations`}>
+              <span className="min-w-4 text-right text-2xs text-subtle-foreground type-live" aria-label={filtering ? `${count} matching` : `${count} conversations`}>
                 {count}
               </span>
             ) : null}
           </span>
         ) : index < 9 && isMac() ? (
-          <SidebarMenuBadge className="text-3xs">⌘{index + 1}</SidebarMenuBadge>
+          <SidebarMenuBadge>⌘{index + 1}</SidebarMenuBadge>
         ) : null}
       </SidebarMenuButton>
       <SidebarMenuTrail keep={menu}>

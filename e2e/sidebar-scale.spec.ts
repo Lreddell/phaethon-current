@@ -1,12 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Locator, Page } from "@playwright/test";
-import { expect, startCore, test, type Core } from "./core";
+import { expect, startCore, switchSpace, test, type Core } from "./core";
 
 /**
  * The sidebar with 1500 conversations in one space (and 300 in another),
  * against the real core: only the rows on screen exist, older pages load as
- * the list scrolls, the filter finds conversations that aren't loaded, and
+ * the list scrolls, the search finds conversations that aren't loaded, and
  * one opened from search beyond the loaded pages scrolls into view.
  */
 
@@ -27,11 +27,13 @@ function seed(home: string, space: string, name: string, count: number, tag: str
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(state, "space.json"), JSON.stringify({ name }));
   const now = Date.now();
+  // The newest is a few minutes old but always today, so "Today" exists even in a run just after midnight.
+  const newest = Math.max(now - 5 * 60_000, new Date(now).setHours(0, 0, 0, 0));
   for (let i = 0; i < count; i++) {
     const file = path.join(dir, `${1_600_000_000_000 + i}.json`);
     // A unique word per conversation, so search and the filter can find exactly one.
     fs.writeFileSync(file, JSON.stringify([{ role: "user", content: [{ type: "text", text: `${tag} chat ${i} ${tag}q${i}x` }] }]));
-    const t = new Date(now - 5 * 60_000 - (count - 1 - i) * 7 * HOUR);
+    const t = new Date(newest - (count - 1 - i) * 7 * HOUR);
     fs.utimesSync(file, t, t);
   }
 }
@@ -111,11 +113,10 @@ test("1500 conversations: windowed rows, pages on scroll, a filter, and search t
   expect(perf.long).toBeLessThan(150);
 
   // The filter narrows to matching titles, loaded or not (the core finds the rest), and Escape clears it.
-  const filter = sidebar.getByRole("searchbox", { name: "Filter chats" });
+  const filter = sidebar.getByRole("searchbox", { name: "Search chats" });
   await filter.fill("Placeholderq3x");
   await expect(row(page, 3)).toBeVisible();
   await expect(row(page, SCHOOL - 1)).toHaveCount(0);
-  await expect(sidebar.getByRole("button", { name: "Go to Work" })).toHaveCount(0);
   await filter.press("Escape");
   await expect(filter).toHaveValue("");
   await expect(row(page, 3)).toHaveCount(0);
@@ -141,14 +142,11 @@ test("1500 conversations: windowed rows, pages on scroll, a filter, and search t
   await expect(focused).toHaveAccessibleName(/^Placeholder chat \d+ /);
   expect(await inView(page, focused)).toBe(true);
   await page.keyboard.press("Home");
-  await expect(focused).toHaveAccessibleName(/^Go to /);
+  await expect(focused).toHaveAccessibleName(new RegExp(`^Placeholder chat ${SCHOOL - 1} `));
   for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
   await expect(focused).toHaveAccessibleName(/ chat \d+ /);
-  await page.keyboard.press("ArrowUp");
-  await page.keyboard.press("ArrowUp");
-  await page.keyboard.press("ArrowUp");
-  await page.keyboard.press("ArrowUp");
-  await expect(sidebar.getByRole("searchbox", { name: "Filter chats" })).toBeFocused();
+  for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowUp");
+  await expect(sidebar.getByRole("searchbox", { name: "Search chats" })).toBeFocused();
 
   // It stays open after a reload, though it isn't on the first page.
   await page.reload();
@@ -157,7 +155,7 @@ test("1500 conversations: windowed rows, pages on scroll, a filter, and search t
   await expect.poll(() => inView(page, row(page, 7))).toBe(true);
 });
 
-test("1500 conversations: a first click opens a cut title, the next space is reachable, the view holds still, a delete keeps focus", async ({ page }) => {
+test("1500 conversations: a first click opens a cut title, pages keep coming, another space is a switch away, the view holds still, a delete keeps focus", async ({ page }) => {
   core = await startCore({
     setup: (home) => {
       seed(home, "school", "School", SCHOOL, "Placeholder");
@@ -174,29 +172,29 @@ test("1500 conversations: a first click opens a cut title, the next space is rea
   await cut.click();
   await expect(page.locator("[data-slot=app-header]")).toContainText(`Placeholder chat ${SCHOOL - 3}`);
 
-  // School loads a share of pages on its own, then offers "Show older", so scrolling on reaches Work.
+  // One space at a time: its pages keep loading as it scrolls, with no "Show older" to press.
   const older = sidebar.getByRole("button", { name: "Show older" });
-  const work = sidebar.getByRole("button", { name: "Go to Work" });
-  // About 250 rows of 29 px: some 20 steps of 400 px (paging through all 1500 would take over a hundred).
-  let steps = 0;
-  for (; steps < 40 && !(await inView(page, work)); steps++) {
+  const height = () => page.evaluate(() => document.querySelector("[data-slot=sidebar-spaces]")!.getBoundingClientRect().height);
+  const before = await height();
+  for (let i = 0; i < 30; i++) {
     await scroller(page).evaluate((el) => el.scrollBy(0, 400));
     await page.waitForTimeout(60);
   }
-  expect(await inView(page, work)).toBe(true);
-  expect(steps).toBeLessThan(30);
-  await expect.poll(() => inView(page, older)).toBe(true);
-  const listed = () => page.evaluate(() => document.querySelectorAll("[data-slot=sidebar-spaces] li[data-item-key^='row:school/']").length);
-  const shareEnd = await sidebar.locator("li[data-item-key^='row:school/']").last().getAttribute("data-item-key");
-  await older.click();
-  await expect(sidebar.locator(`li[data-item-key='${shareEnd}']`)).toBeAttached();
-  // The next page arrives under it (ids count down with age), and the button is gone until School's next share is in.
-  const nextOlder = `row:school/${Number(shareEnd!.split("/")[1]) - 1}`;
-  await expect(sidebar.locator(`li[data-item-key='${nextOlder}']`)).toBeAttached();
+  await expect.poll(height).toBeGreaterThan(before);
   await expect(older).toHaveCount(0);
   // A page arriving in view doesn't fade its rows in over the others.
   expect(await sidebar.locator("li[data-item-key].animate-in").count()).toBe(0);
+  const listed = () => page.evaluate(() => document.querySelectorAll("[data-slot=sidebar-spaces] li[data-item-key^='row:school/']").length);
   expect(await listed()).toBeLessThan(80);
+
+  // Work is a switch away: only its conversations are listed, and School's come back as they were.
+  await switchSpace(page, "Work");
+  await expect(sidebar.getByRole("button", { name: new RegExp(`^Other chat ${WORK - 1} `) })).toBeVisible();
+  await expect(sidebar.locator("li[data-item-key^='row:school/']")).toHaveCount(0);
+  await switchSpace(page, "School");
+  await expect(row(page, SCHOOL - 3)).toHaveAttribute("aria-current", "page");
+  // The rows' entrance is over before anything is measured.
+  await expect(sidebar.locator("[data-entering]")).toHaveCount(0);
 
   // Pinning a conversation below the one being read adds a Pinned group above the view; what is on screen doesn't move.
   await scroller(page).evaluate((el) => (el.scrollTop = 1500));
@@ -226,4 +224,75 @@ test("1500 conversations: a first click opens a cut title, the next space is rea
   const focused = page.locator(":focus");
   await expect(focused).toHaveAttribute("data-nav-row", "");
   await expect(focused).toHaveAccessibleName(onScreen[2]!.name);
+});
+
+test("the selected fill glides between rows on screen, and never moves on its own while scrolling or filtering", async ({ page }) => {
+  core = await startCore({ setup: (home) => seed(home, "school", "School", 300, "Placeholder") });
+  await core.open(page);
+  const sidebar = nav(page);
+  const n = (i: number) => sidebar.getByRole("button", { name: new RegExp(`^Placeholder chat ${i} `) });
+  await expect(n(299)).toHaveAttribute("aria-current", "page");
+  await expect(sidebar.locator("[data-entering]")).toHaveCount(0);
+  const fill = sidebar.locator("[data-slot=sidebar-spaces] > [data-slot=row-highlight]");
+  // The fill's offset from its row, every time it is set, until `stop()`: a glide sets a non-zero offset that springs back to 0.
+  const watch = () =>
+    fill.evaluate((h) => {
+      const seen: string[] = [];
+      const mo = new MutationObserver(() => seen.push((h.firstElementChild as HTMLElement).style.transform));
+      mo.observe(h.firstElementChild!, { attributes: true, attributeFilter: ["style"] });
+      (window as unknown as { stopWatch: () => string[] }).stopWatch = () => (mo.disconnect(), seen);
+    });
+  const stop = () => page.evaluate(() => (window as unknown as { stopWatch: () => string[] }).stopWatch());
+  const moved = (seen: string[]) => seen.some((t) => /translateY\(-?[1-9]/.test(t));
+  const under = async (row: Locator) => {
+    const [a, b] = await Promise.all([fill.locator("> *").boundingBox(), row.boundingBox()]);
+    return !!a && !!b && Math.abs(a.y - b.y) < 1 && Math.abs(a.height - b.height) < 1;
+  };
+  await expect.poll(() => under(n(299))).toBe(true);
+  // A glide has settled once its offset is cleared.
+  const settled = () => expect.poll(() => fill.evaluate((h) => (h.firstElementChild as HTMLElement).style.transform)).toBe("none");
+
+  // A row on screen: the fill glides over to it and settles under it.
+  await watch();
+  await n(295).click();
+  await expect.poll(() => under(n(295))).toBe(true);
+  expect(moved(await stop())).toBe(true);
+  await expect(n(295)).toHaveAttribute("aria-current", "page");
+  await expect(n(299)).not.toHaveAttribute("aria-current");
+  await settled();
+
+  // Scrolling: the fill rides in the content with its row and is never animated.
+  await watch();
+  for (let i = 0; i < 20; i++) {
+    await scroller(page).evaluate((el) => el.scrollBy(0, 120));
+    await page.waitForTimeout(30);
+  }
+  await scroller(page).evaluate((el) => (el.scrollTop = 0));
+  await page.waitForTimeout(100);
+  expect(await stop()).toEqual([]);
+  await expect.poll(() => under(n(295))).toBe(true);
+
+  // The old row scrolled out of view: the next one is selected in place, no glide in from off screen.
+  await scroller(page).evaluate((el) => (el.scrollTop = 1200));
+  await page.waitForTimeout(200);
+  const far = sidebar.locator("[data-nav-row][aria-label^='Placeholder chat']").filter({ hasNotText: /chat 29[0-9] / });
+  const target = far.nth(Math.floor((await far.count()) / 2));
+  await watch();
+  await target.click();
+  await expect(target).toHaveAttribute("aria-current", "page");
+  await expect.poll(() => under(target)).toBe(true);
+  expect(moved(await stop())).toBe(false);
+
+  // Filtering swaps the list; the fill follows its row there without gliding.
+  await scroller(page).evaluate((el) => (el.scrollTop = 0));
+  await n(296).click();
+  await expect.poll(() => under(n(296))).toBe(true);
+  await watch();
+  const filter = sidebar.getByRole("searchbox", { name: "Search chats" });
+  await filter.fill("Placeholderq296x");
+  await expect(n(295)).toHaveCount(0);
+  await expect.poll(() => under(n(296))).toBe(true);
+  await filter.press("Escape");
+  await expect.poll(() => under(n(296))).toBe(true);
+  expect(moved(await stop())).toBe(false);
 });

@@ -19,22 +19,68 @@ function spaceOk(args: Args) {
   if (!spaces.some((s) => s.id === args.space)) throw `space "${String(args.space)}" does not exist in this vault`;
 }
 
+/** More spaces than fit in a column each, so the access list shows its scale (Settings › Courses). Shared with settings-agents' list. */
+export const MORE_SPACES = [
+  { id: "study-group", name: "Study group", description: "", hue: 200, educationEnabled: true, lastUsed: null },
+  { id: "lab", name: "Lab notebook", description: "", hue: 110, educationEnabled: false, lastUsed: null },
+  { id: "thesis", name: "Senior thesis", description: "Reading notes and drafts", hue: 320, educationEnabled: false, lastUsed: null },
+  { id: "internship", name: "Internship", description: "", hue: 60, educationEnabled: false, lastUsed: null },
+  { id: "robotics", name: "Robotics club", description: "", hue: 285, educationEnabled: false, lastUsed: null },
+  { id: "travel", name: "Travel", description: "", hue: 175, educationEnabled: false, lastUsed: null },
+  { id: "reading", name: "Reading list", description: "", hue: 30, educationEnabled: false, lastUsed: null },
+  { id: "language", name: "Language exchange", description: "", hue: 345, educationEnabled: false, lastUsed: null },
+  { id: "side", name: "Side projects", description: "", hue: 90, educationEnabled: false, lastUsed: null },
+];
+
 const spaces = [
   { id: "school", name: "School", description: "Classes this term", hue: 250, educationEnabled: true, lastUsed: Date.now() },
   { id: "work", name: "Work", description: "Lab job", hue: 150, educationEnabled: true, lastUsed: Date.now() - DAY },
+  { id: "personal", name: "Personal", description: "", hue: 20, educationEnabled: false, lastUsed: null },
+  ...MORE_SPACES,
 ];
 
 // ---- Course sites ----
 
 const ALL = ["overview", "syllabus", "assignments", "announcements", "files", "grades"];
-const lmsCourseList = [
-  { id: "101", name: "Logic and Discrete Math", code: "MTH 214", term: "Fall 2026", current: true },
-  { id: "102", name: "Calculus II", code: "MTH 162", term: "Fall 2026", current: true },
-  { id: "103", name: "Mind and Behavior", code: "PSY 105", term: "Fall 2026", current: true },
-  { id: "104", name: "Beginning Spanish", code: "SPN 101", term: "Fall 2026", current: true },
-  { id: "90", name: "Programming Foundations", code: "CMP 110", term: "Spring 2026", current: false },
-  { id: "91", name: "Writing Studio", code: "WRT 120", term: "Spring 2026", current: false },
+// Names arrive the way a registrar stores them (term prefix, capitals, CRN); `folder` is what an import names the course's folder.
+const lmsCourseList: { id: string; name: string; code?: string; term?: string; current: boolean; folder: string }[] = [
+  { id: "101", name: "FA26: LOGIC AND DISCRETE MATH: 40211", code: "FA26-NF-MTH-214-001", term: "Fall 2026", current: true, folder: "Logic and Discrete Math" },
+  { id: "102", name: "FA26: CALCULUS II - SEC 002: 40388", code: "FA26-NF-MTH-162-002", term: "Fall 2026", current: true, folder: "Calculus II" },
+  { id: "103", name: "FA26: MIND AND BEHAVIOR: 41502", code: "FA26-NF-PSY-105-001", term: "Fall 2026", current: true, folder: "Mind and Behavior" },
+  { id: "104", name: "FA26: BEGINNING SPANISH I: 41977", code: "FA26-NF-SPN-101-003", term: "Fall 2026", current: true, folder: "Beginning Spanish I" },
+  { id: "105", name: "FA26: INTRO PLACEHOLDER STUDIES: 42010", code: "FA26-NF-PLC-100-001", term: "Fall 2026", current: true, folder: "Intro Placeholder Studies" },
+  { id: "106", name: "FA26: WEB DESIGN WITH HTML AND CSS: 42288", code: "FA26-NF-CMP-140-001", term: "Fall 2026", current: true, folder: "Web Design with HTML and CSS" },
+  { id: "90", name: "SP26: PROGRAMMING FOUNDATIONS: 30112", code: "SP26-NF-CMP-110-001", term: "Spring 2026", current: false, folder: "Programming Foundations" },
+  { id: "91", name: "SP26: WRITING STUDIO: 30440", code: "SP26-NF-WRT-120-002", term: "Spring 2026", current: false, folder: "Writing Studio" },
+  { id: "92", name: "SP26: GENERAL CHEMISTRY I LAB: 30871", code: "SP26-NF-CHM-111L-004", term: "Spring 2026", current: false, folder: "General Chemistry I Lab" },
+  { id: "93", name: "SP26: US HISTORY SINCE 1877: 31004", code: "SP26-NF-HIS-202-001", term: "Spring 2026", current: false, folder: "US History Since 1877" },
+  { id: "94", name: "SP26: PLACEHOLDER ETHICS: 31266", code: "SP26-NF-PHL-130-001", term: "Spring 2026", current: false, folder: "Placeholder Ethics" },
+  { id: "95", name: "FA25: INTRO TO STATISTICS: 20333", code: "FA25-NF-MTH-120-005", term: "Fall 2025", current: false, folder: "Intro to Statistics" },
+  { id: "96", name: "FA25: PUBLIC SPEAKING: 20519", code: "FA25-NF-COM-101-002", term: "Fall 2025", current: false, folder: "Public Speaking" },
+  { id: "97", name: "FA25: FIRST-YEAR SEMINAR: 20077", code: "FA25-NF-FYS-100-011", term: "Fall 2025", current: false, folder: "First-Year Seminar" },
+  { id: "98", name: "SU25: SAMPLE ART APPRECIATION: 10650", code: "SU25-NF-ART-105-001", term: "Summer 2025", current: false, folder: "Sample Art Appreciation" },
 ];
+/** A second school's courses, named the way course sites send them (term, code and section in capitals). */
+const ridgewayCourses = [
+  ["r1", "FA26 BIO-1406-003 GENERAL BIOLOGY I"],
+  ["r2", "FA26 BIO-1106-021 GENERAL BIOLOGY LAB I"],
+  ["r3", "FA26 CHM-1311-002 INTRO TO CHEMISTRY II"],
+  ["r4", "FA26 ENG-1302-014 COMPOSITION AND RHETORIC II"],
+  ["r5", "FA26 HIS-2301-012 WORLD HISTORY OF THE AMERICAS"],
+  ["r6", "FA26 PHY-2425-001 UNIVERSITY PHYSICS I"],
+  ["r7", "FA26 STA-2381-005 STATISTICS FOR THE SCIENCES"],
+  ["r8", "FA26 ART-1316-002 DRAWING STUDIO (Sec 02)"],
+  ["r9", "FA26 ECO-2302-004 PRINCIPLES OF MICROECONOMICS"],
+  ["r10", "FA26 PSY-2314-010 LIFESPAN DEVELOPMENT"],
+  ["r11", "FA26 MUS-1306-001 MUSIC APPRECIATION"],
+  ["r12", "FA26 GEO-1403-003 PHYSICAL GEOGRAPHY"],
+  ["r13", "SP26 CS-1428-002 FOUNDATIONS OF COMPUTER SCIENCE I"],
+  ["r14", "SP26 MAT-2413-006 CALCULUS I"],
+  ["r15", "SP26 PHI-2306-001 INTRODUCTION TO ETHICS"],
+  ["r16", "SP26 SPN-1412-008 BEGINNING SPANISH II"],
+  ["r17", "SU26 KIN-1164-030 HEALTH AND WELLNESS CRN 48213"],
+].map(([id, name]) => ({ id, name, folder: name, code: name.split(" ")[1], term: name.startsWith("FA") ? "Fall 2026" : name.startsWith("SP") ? "Spring 2026" : "Summer 2026", current: name.startsWith("FA") }));
+const catalogOf = (connection: string) => (connection === "c2" ? ridgewayCourses : lmsCourseList);
 const schools = [
   { name: "Northfield State University", address: "https://canvas.northfield.example" },
   { name: "Northfield State, Lakeview campus", address: "https://canvas.northfield.example" },
@@ -51,14 +97,39 @@ const connections: { id: string; kind: string; address: string; schoolName?: str
         schoolName: "Northfield State University",
         signedIn: scenario !== "signedout",
         lastSync: Date.now() - 3 * DAY,
-        courses: ["101", "102", "103"],
+        courses: ["101", "102", "103", "105", "106", "90", "92", "93", "94", "95", "96", "97", "98"],
+      },
+      {
+        id: "c2",
+        kind: "brightspace",
+        address: "https://ridgeway.example",
+        schoolName: "Ridgeway College",
+        signedIn: true,
+        lastSync: Date.now() - DAY,
+        courses: ridgewayCourses.map((c) => c.id),
       },
     ];
 const access: Record<string, Record<string, string[]>> = empty
   ? {}
   : {
-      school: { "c1/101": [...ALL], "c1/102": [...ALL], "c1/103": ["overview", "syllabus", "assignments", "announcements", "files"] },
-      work: {},
+      school: {
+        "c1/101": [...ALL],
+        "c1/102": [...ALL],
+        "c1/103": ["overview", "syllabus", "assignments", "announcements", "files"],
+        "c1/105": [...ALL],
+        "c1/106": [...ALL],
+        ...Object.fromEntries(["r1", "r2", "r3", "r4", "r5", "r6", "r7", "r13", "r14", "r15", "r16"].map((id) => [`c2/${id}`, [...ALL]])),
+        "c2/r8": ["overview", "syllabus", "assignments"],
+      },
+      work: { "c2/r7": [...ALL], "c2/r9": [...ALL] },
+      "study-group": { "c1/101": [...ALL], "c2/r1": [...ALL], "c2/r3": [...ALL], "c2/r6": [...ALL], "c2/r7": [...ALL], "c2/r14": [...ALL] },
+      lab: { "c2/r1": [...ALL], "c2/r2": [...ALL], "c2/r3": ["files"] },
+      thesis: { "c2/r5": [...ALL] },
+      internship: { "c2/r1": [...ALL], "c2/r9": [...ALL] },
+      robotics: { "c2/r6": [...ALL], "c2/r13": [...ALL] },
+      reading: { "c2/r5": [...ALL], "c2/r7": [...ALL], "c2/r15": [...ALL] },
+      language: { "c1/104": [...ALL], "c2/r16": [...ALL] },
+      side: { "c2/r7": [...ALL], "c2/r13": [...ALL] },
     };
 const material = {
   "101": {
@@ -80,7 +151,7 @@ function courseInfos() {
   return connections
     .flatMap((c) =>
       c.courses.map((id) => {
-        const x = lmsCourseList.find((k) => k.id === id) ?? { name: id, code: undefined, term: undefined };
+        const x = catalogOf(c.id).find((k) => k.id === id) ?? { name: id, code: undefined, term: undefined, folder: id };
         return {
           key: `${c.id}/${id}`,
           connection: c.id,
@@ -88,7 +159,7 @@ function courseInfos() {
           name: x.name,
           ...(x.code ? { code: x.code } : {}),
           ...(x.term ? { term: x.term } : {}),
-          folder: `courses/${x.name}`,
+          folder: `courses/${x.folder}`,
           ...(material[id] ? { material: material[id] } : {}),
         };
       }),
@@ -123,7 +194,7 @@ const decks: Record<string, { title: string; course?: string; sources: string[];
   ? {}
   : {
       "study/decks/Sets and functions.md": {
-        title: "Sets and functions",
+        title: "MTH 214 Sets and functions",
         course: "Logic and Discrete Math",
         sources: [`${CS101}/files/Course notes chapter 2.pdf`, `${CS101}/syllabus.md`],
         cards: [
@@ -136,7 +207,7 @@ const decks: Record<string, { title: string; course?: string; sources: string[];
         ],
       },
       "study/decks/Logic and proofs.md": {
-        title: "Logic and proofs",
+        title: "MTH 214: Logic and proofs",
         course: "Logic and Discrete Math",
         sources: [`${CS101}/modules.md`],
         cards: [
@@ -145,8 +216,19 @@ const decks: Record<string, { title: string; course?: string; sources: string[];
           { front: "What does a proof by contradiction assume?", back: "That the statement is false, then derives a contradiction.", confidence: 4, due: now0 + 2 * DAY },
         ],
       },
+      "study/decks/Relations.md": {
+        title: "Logic and Discrete Math — Relations",
+        course: "Logic and Discrete Math",
+        sources: [`${CS101}/modules.md`],
+        cards: [
+          { front: "What makes a relation on $A$ reflexive?", back: "Every $a \\in A$ is related to itself: $(a, a) \\in R$." },
+          { front: "A relation that is reflexive, symmetric and transitive is an {{equivalence relation}}.", back: "" },
+          { front: "What is a partial order?", back: "A relation that is reflexive, antisymmetric and transitive." },
+          { front: "What is the transitive closure of $R$?", back: "The smallest transitive relation that contains $R$." },
+        ],
+      },
       "study/decks/Integration techniques.md": {
-        title: "Integration techniques",
+        title: "MTH 162 Integration techniques",
         course: "Calculus II",
         sources: [`${CALC}/files/Section 7.1.pdf`],
         cards: [
@@ -253,17 +335,37 @@ const quizzes: Record<string, { title: string; course?: string; sources: string[
   ? {}
   : {
       "study/quizzes/Test 1 practice.json": {
-        title: "Test 1 practice",
+        title: "MTH 214 Test 1 practice",
         course: "Logic and Discrete Math",
         sources: [CS101],
         created: now0 - 2 * DAY,
         questions: test1,
         grounding,
-        lastScore: 0.6,
+        lastScore: 0.68,
         lastTaken: now0 - DAY,
       },
+      "study/quizzes/Induction drill.json": {
+        title: "MTH 214 – Induction drill",
+        course: "Logic and Discrete Math",
+        sources: [CS101],
+        created: now0 - 3 * 3600_000,
+        questions: [
+          { id: "i1", kind: "choice", prompt: "What does the inductive step of a proof by induction show?", choices: ["$P(k) \\to P(k + 1)$", "$P(1)$", "$P(k)$ for every $k$"], answer: "$P(k) \\to P(k + 1)$", explanation: "The step carries the statement from one case to the next.", source: `${CS101}/modules.md` },
+          { id: "i2", kind: "truefalse", prompt: "Strong induction may assume $P(1), \\dots, P(k)$ to prove $P(k + 1)$.", choices: ["true", "false"], answer: "true", explanation: "That is what makes it strong." },
+          { id: "i3", kind: "truefalse", prompt: "A base case is optional when the inductive step holds.", choices: ["true", "false"], answer: "false", explanation: "Without a base case nothing gets started." },
+        ],
+      },
+      "study/quizzes/Sets quiz.json": {
+        title: "MTH214: Sets and functions quiz",
+        course: "Logic and Discrete Math",
+        sources: [CS101],
+        created: now0 - 4 * DAY,
+        questions: test1.slice(0, 2).concat(test1.slice(3, 4)),
+        lastScore: 0.33,
+        lastTaken: now0 - 3 * DAY,
+      },
       "study/quizzes/Series and sequences.json": {
-        title: "Series and sequences",
+        title: "MTH 162 Series and sequences",
         course: "Calculus II",
         sources: [CALC],
         created: now0 - 5 * DAY,
@@ -363,7 +465,8 @@ function gradeData() {
     {
       connection: "c1",
       courseId: "102",
-      course: "Calculus II",
+      // Names as course sites send them (term code, capitals, section); the page shows them short.
+      course: "XX99: CALCULUS II: 1234",
       folder: "courses/Calculus II",
       updated: Date.now() - 2 * 3600_000,
       current: { percent: 78.6, letter: "C+" },
@@ -389,7 +492,7 @@ function gradeData() {
     {
       connection: "c1",
       courseId: "101",
-      course: "Logic and Discrete Math",
+      course: "XX99: LOGIC AND DISCRETE MATH (All Sections)",
       folder: CS101,
       updated: Date.now() - 2 * 3600_000,
       current: { percent: 91.25, letter: "A-", points: 146, possible: 160 },
@@ -408,7 +511,7 @@ function gradeData() {
     {
       connection: "c1",
       courseId: "103",
-      course: "Mind and Behavior",
+      course: "XX99: INTRO PLACEHOLDER STUDIES: 1234",
       folder: "courses/Mind and Behavior",
       updated: Date.now() - 2 * 3600_000,
       current: {},
@@ -470,7 +573,7 @@ export default {
     const c = connections.find((x) => x.id === args.connection);
     if (!c) throw "That course site isn’t connected.";
     if (!c.signedIn) throw "You’ve been signed out of your course site. Sign in again to continue.";
-    return lmsCourseList.map((x) => ({ ...x, imported: c.courses.includes(x.id), ...(x.id === "104" && c.courses.length ? { partial: true } : {}) }));
+    return catalogOf(c.id).map(({ folder: _, ...x }) => ({ ...x, imported: c.courses.includes(x.id), ...(x.id === "104" && c.courses.length ? { partial: true } : {}) }));
   },
   lms_import: async (args: Args) => {
     const send = streamTo(args.onEvent);
@@ -481,7 +584,8 @@ export default {
     importCancel = () => (cancelled = true);
     const late: (() => void)[] = [];
     for (const id of ids) {
-      const name = lmsCourseList.find((x) => x.id === id)?.name ?? id;
+      const course = catalogOf(c.id).find((x) => x.id === id);
+      const name = course?.name ?? id;
       const steps: [string, number, number][] = [["reading", 0, 1], ["reading", 1, 1], ["files", 0, 12], ["files", 5, 12], ["files", 12, 12], ["readings", 0, 2], ["readings", 2, 2], ["writing", 0, 1]];
       for (const [step, done, total] of steps) {
         await sleep(350);
@@ -498,7 +602,7 @@ export default {
         c.courses.push(id);
         for (const s of args.spaces as string[]) (access[s] ??= {})[`${c.id}/${id}`] = [...ALL];
       }
-      const event = { type: "course", course: id, folder: `courses/${name}`, files: 12 + (Number(id) % 7), readings: Number(id) % 4, links: 5, skipped: id === "103" ? ["Announcements: the site didn’t answer.", "File “Quiz 3 key.pdf”: locked for now"] : [], ...(material[id] ? { material: material[id] } : {}) };
+      const event = { type: "course", course: id, folder: `courses/${course?.folder ?? id}`, files: 12 + (Number(id) % 7), readings: Number(id) % 4, links: 5, skipped: id === "103" ? ["Announcements: the site didn’t answer.", "File “Quiz 3 key.pdf”: locked for now"] : [], ...(material[id] ? { material: material[id] } : {}) };
       // The last course's event is big; it lands after the command has returned, as Tauri did with 8 KB+ messages.
       if (id === ids[ids.length - 1]) late.push(() => send(event));
       else send(event);
@@ -585,7 +689,7 @@ export default {
     spaceOk(args);
     return courseInfos()
       .filter((c) => (access[String(args.space)]?.[c.key]?.length ?? 0) > 0)
-      .map((c) => ({ name: c.name, folder: c.folder, syllabus: true, assignments: true, files: true, readings: c.courseId !== "103" }));
+      .map((c) => ({ name: c.name, folder: c.folder, ...(c.code ? { code: c.code } : {}), syllabus: true, assignments: true, files: true, readings: c.courseId !== "103" }));
   },
   study_overview: async (args: Args) => {
     spaceOk(args);
