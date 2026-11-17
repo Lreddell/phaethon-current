@@ -1,5 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
+import { useCatalog } from "@/features/chat/catalog";
+import { invalidate } from "@/lib/query";
 import { FieldError, RowError, cleanMessage } from "@/components/errors";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
@@ -380,6 +382,8 @@ export function AgentsSection() {
     try {
       const [clis, instances] = await Promise.all([cliStatuses(), listInstances()]);
       state.setData({ clis, instances });
+      invalidate("agents:usage");
+      await useCatalog.getState().load(true);
     } catch (e) {
       toast.error("Couldn’t refresh coding agents", cleanMessage(e));
     }
