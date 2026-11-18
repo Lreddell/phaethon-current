@@ -1,27 +1,25 @@
 name: PR 8 native Mac preview delivery
 on:
   workflow_dispatch:
+    inputs:
+      arch:
+        description: Native Mac architecture
+        required: true
+        default: arm64
+        type: choice
+        options: [arm64, x64]
 permissions:
   contents: write
 jobs:
   mac:
+    name: Native Mac ${{ inputs.arch }}
     if: github.repository == 'Lreddell/phaethon-current'
     timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            arch: arm64
-            machine: arm64
-          - runner: macos-15-intel
-            arch: x64
-            machine: x86_64
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ inputs.arch == 'arm64' && 'macos-26' || 'macos-26-intel' }}
     env:
       SOURCE_SHA: e5c1ee534dfeb4fbd6da20354d0ba6c989aa0257
-      BUILD_ARCH: ${{ matrix.arch }}
-      EXPECTED_MACHINE: ${{ matrix.machine }}
+      BUILD_ARCH: ${{ inputs.arch }}
+      EXPECTED_MACHINE: ${{ inputs.arch == 'arm64' && 'arm64' || 'x86_64' }}
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@v7
@@ -40,11 +38,10 @@ jobs:
           sw_vers
           uname -m
       - run: pnpm install --frozen-lockfile
-      - name: Select stable Xcode 26.2 for the upstream app icon
+      - name: Confirm the native macOS 26 Xcode toolchain
         shell: bash
         run: |
-          test -d /Applications/Xcode_26.2.app
-          sudo xcode-select -s /Applications/Xcode_26.2.app
+          xcode-select -p
           xcodebuild -version
           xcrun actool --version
       - run: pnpm typecheck
@@ -180,7 +177,7 @@ jobs:
       - uses: actions/upload-artifact@v5
         if: always()
         with:
-          name: pr8-mac-${{ matrix.arch }}-e5c1ee5
+          name: pr8-mac-${{ inputs.arch }}-e5c1ee5
           path: |
             delivery/
             test-results/
