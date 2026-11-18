@@ -102,8 +102,8 @@ function Usage({ id }: { id: string }) {
   if (!u.available || u.windows.length === 0) return (
     <div className="flex items-center gap-2">
       <p className="min-w-0 flex-1 text-subtle-foreground text-xs">{u.reason ?? "No usage limits to show."}</p>
-      <Button size="xs" variant="ghost" disabled={refreshing} onClick={() => void refresh()}>
-        {refreshing ? <Spinner size="xs" /> : <Icon icon={icons.retry} />}
+      <Button size="xs" variant="outline" disabled={refreshing} onClick={() => void refresh()}>
+        {refreshing ? <Spinner /> : <Icon icon={icons.retry} />}
         Refresh usage
       </Button>
     </div>
@@ -375,10 +375,12 @@ function CliRow({
                     ))}
                   </AnimatePresence>
                   <AddAccount cli={cli} onChanged={onChanged} />
-                  <Button size="xs" variant="ghost" className="mx-3 mb-1 self-start" onClick={onRecheck} disabled={rechecking}>
-                    {rechecking ? <Spinner size="xs" /> : <Icon icon={icons.retry} />}
-                    {rechecking ? "Refreshing…" : "Refresh models and usage"}
-                  </Button>
+                  <Row label="Models and usage">
+                    <Button size="xs" variant="outline" onClick={onRecheck} disabled={rechecking}>
+                      {rechecking ? <Spinner /> : <Icon icon={icons.retry} />}
+                      {rechecking ? "Refreshing…" : "Refresh"}
+                    </Button>
+                  </Row>
                 </>
               )}
             </RowDetail>
