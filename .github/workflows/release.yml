@@ -40,11 +40,11 @@ jobs:
           sw_vers
           uname -m
       - run: pnpm install --frozen-lockfile
-      - name: Select Xcode 26 or later for the upstream app icon
+      - name: Select stable Xcode 26.2 for the upstream app icon
         shell: bash
         run: |
-          xcode="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
-          sudo xcode-select -s "$xcode"
+          test -d /Applications/Xcode_26.2.app
+          sudo xcode-select -s /Applications/Xcode_26.2.app
           xcodebuild -version
           xcrun actool --version
       - run: pnpm typecheck
@@ -92,9 +92,11 @@ jobs:
       - name: Package native DMG and ZIP with upstream ad-hoc signing fallback
         shell: bash
         run: |
+          mkdir -p delivery
           pnpm exec electron-builder --mac "--$BUILD_ARCH" --publish never \
             -c.mac.identity=- -c.mac.hardenedRuntime=false \
-            '-c.artifactName=Phaethon-${version}-PR8-e5c1ee5-${os}-${arch}.${ext}'
+            '-c.artifactName=Phaethon-${version}-PR8-e5c1ee5-${os}-${arch}.${ext}' \
+            2>&1 | tee "delivery/mac-$BUILD_ARCH-package.log"
       - name: Verify app signature, native modules, source bytes and DMG startup
         shell: bash
         run: |
