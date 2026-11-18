@@ -17,14 +17,14 @@ jobs:
     timeout-minutes: 35
     runs-on: ${{ inputs.arch == 'arm64' && 'macos-26' || 'macos-26-intel' }}
     env:
-      SOURCE_SHA: e5c1ee534dfeb4fbd6da20354d0ba6c989aa0257
+      SOURCE_SHA: 851d52a282636efcf93d09503c159129a72c8753
       BUILD_ARCH: ${{ inputs.arch }}
       EXPECTED_MACHINE: ${{ inputs.arch == 'arm64' && 'arm64' || 'x86_64' }}
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: e5c1ee534dfeb4fbd6da20354d0ba6c989aa0257
+          ref: 851d52a282636efcf93d09503c159129a72c8753
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -92,7 +92,7 @@ jobs:
           mkdir -p delivery
           pnpm exec electron-builder --mac "--$BUILD_ARCH" --publish never \
             -c.mac.identity=- -c.mac.hardenedRuntime=false \
-            '-c.artifactName=Phaethon-${version}-PR8-e5c1ee5-${os}-${arch}.${ext}' \
+            '-c.artifactName=Phaethon-${version}-PR8-851d52a-${os}-${arch}.${ext}' \
             2>&1 | tee "delivery/mac-$BUILD_ARCH-package.log"
       - name: Verify app signature, native modules, source bytes and DMG startup
         shell: bash
@@ -123,7 +123,7 @@ jobs:
           const natives=fs.readdirSync(path.join(app,'Contents/Resources'),{recursive:true}).filter(name=>name.endsWith('.node'));
           if(!natives.some(name=>name.includes('keyring'))||!natives.some(name=>name.includes('canvas')))throw new Error('Required native module missing');
           for(const native of natives){const architectures=execFileSync('lipo',['-archs',path.join(app,'Contents/Resources',native)],{encoding:'utf8'}).trim();if(!architectures.split(/\s+/).includes(expected))throw new Error('Wrong native module architecture: '+native)}
-          const dmg=path.resolve('release',`Phaethon-0.3.1-PR8-e5c1ee5-mac-${arch}.dmg`);
+          const dmg=path.resolve('release',`Phaethon-0.3.1-PR8-851d52a-mac-${arch}.dmg`);
           const mount=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'pr8-mount-'));
           const screenshot=path.resolve('delivery',`mac-${arch}-startup.png`);
           const config=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'pr8-mac-smoke-'));
@@ -132,14 +132,14 @@ jobs:
             execFileSync('hdiutil',['attach',dmg,'-mountpoint',mount,'-nobrowse','-readonly'],{stdio:'inherit'});mounted=true;
             const installedApp=path.join(mount,'Phaethon.app');
             execFileSync('codesign',['--verify','--deep','--strict',installedApp],{stdio:'inherit'});
-            const launched=spawnSync(path.join(installedApp,'Contents/MacOS/Phaethon'),[],{env:{...process.env,PHAETHON_HOME:config,PHAETHON_CAPTURE:screenshot,PHAETHON_CAPTURE_PROFILE:path.join(config,'browser'),PHAETHON_CAPTURE_DELAY:'5000',PHAETHON_CAPTURE_SIZE:'1280x800'},encoding:'utf8',timeout:90000});
+            const launched=spawnSync(path.join(installedApp,'Contents/MacOS/Phaethon'),[],{env:{...process.env,PHAETHON_HOME:config,PHAETHON_CAPTURE:screenshot,PHAETHON_CAPTURE_PROFILE:path.join(config,'browser'),PHAETHON_CAPTURE_DELAY:'5000',PHAETHON_CAPTURE_SKIP_SETUP:'1',PHAETHON_CAPTURE_SIZE:'1280x800'},encoding:'utf8',timeout:90000});
             fs.writeFileSync(path.resolve('delivery',`mac-${arch}-startup.log`),String(launched.stdout??'')+String(launched.stderr??''));
             if(launched.status!==0||!fs.existsSync(screenshot))throw new Error('DMG application startup failed: '+String(launched.stderr).slice(-2500));
             const png=fs.readFileSync(screenshot);if(!png.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))||png.readUInt32BE(16)<1280||png.readUInt32BE(20)<800)throw new Error('Bad startup capture');
           }finally{if(mounted)execFileSync('hdiutil',['detach',mount],{stdio:'inherit'})}
           const minimumOS=execFileSync('/usr/libexec/PlistBuddy',['-c','Print :LSMinimumSystemVersion',path.join(app,'Contents/Info.plist')],{encoding:'utf8'}).trim();
           const receipt={source:process.env.SOURCE_SHA,platform:process.platform,architecture:arch,runnerOS:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8'}).trim(),minimumOS,version:packageInfo.version,adHocSigned:true,notarized:false,signatureVerified:true,nativeModuleCount:natives.length,entryFilesVerified:entries.length,dmgMountedAndLaunched:true,startupScreenshot:path.basename(screenshot),archiveSHA256:crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex'),assets:[]};
-          for(const ext of ['dmg','zip']){const name=`Phaethon-0.3.1-PR8-e5c1ee5-mac-${arch}.${ext}`;const file=path.join('release',name);const bytes=fs.readFileSync(file);receipt.assets.push({name,size:bytes.length,sha256:crypto.createHash('sha256').update(bytes).digest('hex')});fs.copyFileSync(file,path.join('delivery',name))}
+          for(const ext of ['dmg','zip']){const name=`Phaethon-0.3.1-PR8-851d52a-mac-${arch}.${ext}`;const file=path.join('release',name);const bytes=fs.readFileSync(file);receipt.assets.push({name,size:bytes.length,sha256:crypto.createHash('sha256').update(bytes).digest('hex')});fs.copyFileSync(file,path.join('delivery',name))}
           fs.copyFileSync(`release-cli-probe-${arch}.json`,path.join('delivery',`mac-${arch}-cli-startup.json`));
           fs.writeFileSync(path.join('delivery',`mac-${arch}-validation.json`),JSON.stringify(receipt,null,2));
           console.log(JSON.stringify(receipt,null,2));
@@ -153,7 +153,7 @@ jobs:
           import os,json,pathlib,urllib.request,hashlib
           from urllib.parse import quote
           repo=os.environ['GITHUB_REPOSITORY'];token=os.environ['GH_TOKEN'];arch=os.environ['BUILD_ARCH']
-          api=f'https://api.github.com/repos/{repo}';release_id=450421609
+          api=f'https://api.github.com/repos/{repo}';release_id=450544895
           headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','User-Agent':'Phaethon-PR8-Mac-delivery'}
           def get(url):
               with urllib.request.urlopen(urllib.request.Request(url,headers=headers)) as response:return json.load(response)
@@ -177,7 +177,7 @@ jobs:
       - uses: actions/upload-artifact@v5
         if: always()
         with:
-          name: pr8-mac-${{ inputs.arch }}-e5c1ee5
+          name: pr8-mac-${{ inputs.arch }}-851d52a
           path: |
             delivery/
             test-results/
