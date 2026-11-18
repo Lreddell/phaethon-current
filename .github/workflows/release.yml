@@ -1,137 +1,186 @@
-# Builds Phaethon for macOS (arm64 and x64), Windows (x64) and Linux (AppImage
-# and deb, x64) and uploads the installers and the updater's latest*.yml files
-# to a draft GitHub release for the tag. Publishing the draft is what makes it
-# the update everyone gets: electron-updater reads the latest published release
-# of jerynv/phaethon, never a draft or a prerelease.
-#
-# Optional macOS signing and notarization (repository secrets, as before):
-# APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD, APPLE_ID,
-# APPLE_PASSWORD (an app-specific password) and APPLE_TEAM_ID. Without a
-# certificate the macOS build is signed ad hoc: Gatekeeper warns on first open,
-# and macOS can't install updates in place (people download the new version).
-# Ad hoc signing is required, not optional: flipping the fuses rewrites Electron
-# Framework, and Apple Silicon kills a binary whose code no longer matches its
-# signature. Ad hoc builds turn hardened runtime off, because its library
-# validation rejects frameworks that don't share a Team ID.
-#
-# Phaethon 0.1.x (Tauri) installs read latest.json and can't update to these
-# builds; they need one manual install.
-name: release
-
+name: PR 8 native Mac preview delivery
 on:
   workflow_dispatch:
-  push:
-    tags: ["v*"]
-
 permissions:
   contents: write
-
 jobs:
-  draft:
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: The tag matches package.json
-        id: version
-        shell: bash
-        run: |
-          version="$(node -p 'require("./package.json").version')"
-          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
-            echo "Tag $GITHUB_REF_NAME doesn't match package.json version $version." >&2
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      # One draft for every build to upload into, so parallel jobs don't each make their own.
-      - name: Draft release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
-        shell: bash
-        run: |
-          if ! gh release view "v$VERSION" >/dev/null 2>&1; then
-            gh release create "v$VERSION" --draft --title "Phaethon $VERSION" --target "$GITHUB_SHA" --notes \
-              "Pre-alpha desktop build. Phaethon is still in development and is not ready for real data.
-
-          Download the installer for your operating system from the assets below. Future releases can update from inside the app.
-
-          Phaethon 0.1.x can't update itself to this version: download and install it once by hand."
-          fi
-
-  build:
-    needs: draft
+  mac:
+    if: github.repository == 'Lreddell/phaethon-current'
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            target: --mac --arm64 --x64
-            # Both architectures' prebuilt native modules, for the x64 build on an arm64 runner.
-            install: pnpm install --frozen-lockfile --cpu=arm64 --cpu=x64
-          - os: windows-latest
-            target: --win --x64
-            install: pnpm install --frozen-lockfile
-          - os: ubuntu-latest
-            target: --linux --x64
-            install: pnpm install --frozen-lockfile
-    runs-on: ${{ matrix.os }}
+          - runner: macos-15
+            arch: arm64
+            machine: arm64
+          - runner: macos-15-intel
+            arch: x64
+            machine: x86_64
+    runs-on: ${{ matrix.runner }}
+    env:
+      SOURCE_SHA: e5c1ee534dfeb4fbd6da20354d0ba6c989aa0257
+      BUILD_ARCH: ${{ matrix.arch }}
+      EXPECTED_MACHINE: ${{ matrix.machine }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@v7
-
+        with:
+          ref: e5c1ee534dfeb4fbd6da20354d0ba6c989aa0257
       - uses: pnpm/action-setup@v6
-
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
-
-      - run: ${{ matrix.install }}
-
-      # The app icon is an Icon Composer bundle, which only actool 26+ compiles.
-      - name: Xcode 26 or later
-        if: runner.os == 'macOS'
+      - name: Confirm exact source and native architecture
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(uname -m)" = "$EXPECTED_MACHINE"
+          sw_vers
+          uname -m
+      - run: pnpm install --frozen-lockfile
+      - name: Select Xcode 26 or later for the upstream app icon
         shell: bash
         run: |
           xcode="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
           sudo xcode-select -s "$xcode"
-          xcrun actool --version | grep -A1 short-bundle-version
-
-      - name: Apple signing when available
-        if: runner.os == 'macOS'
-        shell: bash
-        env:
-          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_ACCOUNT: ${{ secrets.APPLE_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          put() {
-            local delimiter="EOF_$(uuidgen)"
-            printf '%s<<%s\n%s\n%s\n' "$1" "$delimiter" "$2" "$delimiter" >> "$GITHUB_ENV"
-          }
-          if [[ -z "$CERTIFICATE" ]]; then
-            echo "No Apple certificate: the build is signed ad hoc."
-            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
-            echo "MAC_SIGN_ARGS=-c.mac.identity=- -c.mac.hardenedRuntime=false" >> "$GITHUB_ENV"
-            exit 0
-          fi
-          put CSC_LINK "$CERTIFICATE"
-          [[ -n "$CERTIFICATE_PASSWORD" ]] && put CSC_KEY_PASSWORD "$CERTIFICATE_PASSWORD"
-          if [[ -n "$APPLE_ACCOUNT" && -n "$APPLE_APP_PASSWORD" && -n "$TEAM_ID" ]]; then
-            put APPLE_ID "$APPLE_ACCOUNT"
-            put APPLE_APP_SPECIFIC_PASSWORD "$APPLE_APP_PASSWORD"
-            put APPLE_TEAM_ID "$TEAM_ID"
-          else
-            echo "No notarization credentials: the build is signed but not notarized."
-          fi
-
+          xcodebuild -version
+          xcrun actool --version
+      - run: pnpm typecheck
+      - run: pnpm test
       - run: pnpm build
-
-      - name: Package and upload to the draft
+      - run: pnpm exec playwright install chromium-headless-shell
+      - run: pnpm exec playwright test
+      - name: Start real old and current Codex app servers without an account
+        shell: bash
+        run: |
+          for version in 0.128.0 0.169.0; do
+            npm install --prefix "$RUNNER_TEMP/pr8-codex-$version" --no-audit --no-fund "@openai/codex@$version"
+          done
+          cat > "$RUNNER_TEMP/pr8-cli-probe.mts" <<'TS'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import {spawn} from 'node:child_process';
+          import {createInterface} from 'node:readline';
+          import {pathToFileURL} from 'node:url';
+          const {appServerArgs,CLIENT_INFO}=await import(pathToFileURL(path.join(process.cwd(),'src/server/cli/codex.ts')).href);
+          const results=[];
+          for(const version of ['0.128.0','0.169.0']) {
+            const configDir=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP!,'pr8-empty-codex-'));
+            const binary=path.join(process.env.RUNNER_TEMP!,`pr8-codex-${version}`,'node_modules/.bin/codex');
+            const args=appServerArgs([configDir,process.cwd()]);
+            if(args.includes('features.prefer_mxc=true')) throw new Error('Windows-only MXC option reached macOS');
+            const child=spawn(binary,args,{env:{...process.env,CODEX_HOME:configDir},stdio:['pipe','pipe','pipe']});
+            let stderr=''; child.stderr.on('data',data=>stderr+=String(data));
+            const lines=createInterface({input:child.stdout});
+            try {
+              const result=await new Promise((resolve,reject)=>{
+                const timeout=setTimeout(()=>reject(new Error('CLI initialize timed out: '+stderr.slice(-1500))),20000);
+                child.once('error',error=>{clearTimeout(timeout);reject(error)});
+                child.once('exit',code=>{clearTimeout(timeout);reject(new Error(`CLI exited ${code}: ${stderr.slice(-1500)}`))});
+                lines.on('line',line=>{try{const message=JSON.parse(line);if(message.id===1){clearTimeout(timeout);message.error?reject(new Error(JSON.stringify(message.error))):resolve(message.result)}}catch{}});
+                child.stdin.write(JSON.stringify({id:1,method:'initialize',params:{clientInfo:CLIENT_INFO,capabilities:{experimentalApi:true}}})+'\n');
+              });
+              results.push({version,platform:process.platform,architecture:process.arch,initialized:true,result});
+            } finally {lines.close();child.stdin.end();child.kill('SIGTERM')}
+          }
+          fs.writeFileSync(`release-cli-probe-${process.arch}.json`,JSON.stringify(results,null,2));
+          console.log(JSON.stringify(results,null,2));
+          TS
+          pnpm exec tsx "$RUNNER_TEMP/pr8-cli-probe.mts"
+      - name: Package native DMG and ZIP with upstream ad-hoc signing fallback
+        shell: bash
+        run: |
+          pnpm exec electron-builder --mac "--$BUILD_ARCH" --publish never \
+            -c.mac.identity=- -c.mac.hardenedRuntime=false \
+            '-c.artifactName=Phaethon-${version}-PR8-e5c1ee5-${os}-${arch}.${ext}'
+      - name: Verify app signature, native modules, source bytes and DMG startup
+        shell: bash
+        run: |
+          mkdir -p delivery
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import crypto from 'node:crypto';
+          import {createRequire} from 'node:module';
+          import {execFileSync,spawnSync} from 'node:child_process';
+          const req=createRequire(import.meta.url);
+          const br=createRequire(req.resolve('electron-builder'));
+          const ar=createRequire(br.resolve('app-builder-lib'));
+          const asar=ar('@electron/asar');
+          const arch=process.env.BUILD_ARCH;
+          const expected=arch==='arm64'?'arm64':'x86_64';
+          const app=path.resolve('release',arch==='arm64'?'mac-arm64':'mac','Phaethon.app');
+          execFileSync('codesign',['--verify','--deep','--strict',app],{stdio:'inherit'});
+          const binary=path.join(app,'Contents/MacOS/Phaethon');
+          const binaryArch=execFileSync('lipo',['-archs',binary],{encoding:'utf8'}).trim();
+          if(binaryArch!==expected)throw new Error('Wrong application architecture: '+binaryArch);
+          const archive=path.join(app,'Contents/Resources/app.asar');
+          const packageInfo=JSON.parse(asar.extractFile(archive,'package.json'));
+          if(packageInfo.version!=='0.3.1')throw new Error('Wrong application version');
+          const entries=['dist/server/main.mjs','dist/server/text-child.mjs','dist/desktop/main.cjs','dist/desktop/preload.cjs','dist/web/index.html'];
+          for(const entry of entries)if(!fs.readFileSync(entry).equals(asar.extractFile(archive,entry)))throw new Error('Packaged bytes differ: '+entry);
+          const natives=fs.readdirSync(path.join(app,'Contents/Resources'),{recursive:true}).filter(name=>name.endsWith('.node'));
+          if(!natives.some(name=>name.includes('keyring'))||!natives.some(name=>name.includes('canvas')))throw new Error('Required native module missing');
+          for(const native of natives){const architectures=execFileSync('lipo',['-archs',path.join(app,'Contents/Resources',native)],{encoding:'utf8'}).trim();if(!architectures.split(/\s+/).includes(expected))throw new Error('Wrong native module architecture: '+native)}
+          const dmg=path.resolve('release',`Phaethon-0.3.1-PR8-e5c1ee5-mac-${arch}.dmg`);
+          const mount=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'pr8-mount-'));
+          const screenshot=path.resolve('delivery',`mac-${arch}-startup.png`);
+          const config=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'pr8-mac-smoke-'));
+          let mounted=false;
+          try {
+            execFileSync('hdiutil',['attach',dmg,'-mountpoint',mount,'-nobrowse','-readonly'],{stdio:'inherit'});mounted=true;
+            const installedApp=path.join(mount,'Phaethon.app');
+            execFileSync('codesign',['--verify','--deep','--strict',installedApp],{stdio:'inherit'});
+            const launched=spawnSync(path.join(installedApp,'Contents/MacOS/Phaethon'),[],{env:{...process.env,PHAETHON_HOME:config,PHAETHON_CAPTURE:screenshot,PHAETHON_CAPTURE_PROFILE:path.join(config,'browser'),PHAETHON_CAPTURE_DELAY:'5000',PHAETHON_CAPTURE_SIZE:'1280x800'},encoding:'utf8',timeout:90000});
+            fs.writeFileSync(path.resolve('delivery',`mac-${arch}-startup.log`),String(launched.stdout??'')+String(launched.stderr??''));
+            if(launched.status!==0||!fs.existsSync(screenshot))throw new Error('DMG application startup failed: '+String(launched.stderr).slice(-2500));
+            const png=fs.readFileSync(screenshot);if(!png.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))||png.readUInt32BE(16)<1280||png.readUInt32BE(20)<800)throw new Error('Bad startup capture');
+          }finally{if(mounted)execFileSync('hdiutil',['detach',mount],{stdio:'inherit'})}
+          const minimumOS=execFileSync('/usr/libexec/PlistBuddy',['-c','Print :LSMinimumSystemVersion',path.join(app,'Contents/Info.plist')],{encoding:'utf8'}).trim();
+          const receipt={source:process.env.SOURCE_SHA,platform:process.platform,architecture:arch,runnerOS:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8'}).trim(),minimumOS,version:packageInfo.version,adHocSigned:true,notarized:false,signatureVerified:true,nativeModuleCount:natives.length,entryFilesVerified:entries.length,dmgMountedAndLaunched:true,startupScreenshot:path.basename(screenshot),archiveSHA256:crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex'),assets:[]};
+          for(const ext of ['dmg','zip']){const name=`Phaethon-0.3.1-PR8-e5c1ee5-mac-${arch}.${ext}`;const file=path.join('release',name);const bytes=fs.readFileSync(file);receipt.assets.push({name,size:bytes.length,sha256:crypto.createHash('sha256').update(bytes).digest('hex')});fs.copyFileSync(file,path.join('delivery',name))}
+          fs.copyFileSync(`release-cli-probe-${arch}.json`,path.join('delivery',`mac-${arch}-cli-startup.json`));
+          fs.writeFileSync(path.join('delivery',`mac-${arch}-validation.json`),JSON.stringify(receipt,null,2));
+          console.log(JSON.stringify(receipt,null,2));
+          JS
+      - name: Upload verified Mac downloads to the existing unpublished preview
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm exec electron-builder ${{ matrix.target }} ${{ env.MAC_SIGN_ARGS }} --publish always
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os,json,pathlib,urllib.request,hashlib
+          from urllib.parse import quote
+          repo=os.environ['GITHUB_REPOSITORY'];token=os.environ['GH_TOKEN'];arch=os.environ['BUILD_ARCH']
+          api=f'https://api.github.com/repos/{repo}';release_id=450421609
+          headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','User-Agent':'Phaethon-PR8-Mac-delivery'}
+          def get(url):
+              with urllib.request.urlopen(urllib.request.Request(url,headers=headers)) as response:return json.load(response)
+          release=get(f'{api}/releases/{release_id}')
+          if not release['draft'] or release['target_commitish']!=os.environ['SOURCE_SHA']:raise RuntimeError('Unexpected preview release')
+          upload=release['upload_url'].split('{')[0]
+          existing={asset['name']:asset for asset in get(f'{api}/releases/{release_id}/assets')}
+          files=list(pathlib.Path('delivery').glob(f'*mac-{arch}.*'))+list(pathlib.Path('delivery').glob(f'mac-{arch}-*.json'))+list(pathlib.Path('delivery').glob(f'mac-{arch}-*.png'))
+          for file in files:
+              data=file.read_bytes();digest='sha256:'+hashlib.sha256(data).hexdigest()
+              if file.name in existing:
+                  asset=existing[file.name]
+                  if asset.get('digest')!=digest:raise RuntimeError('Different existing asset: '+file.name)
+              else:
+                  request=urllib.request.Request(upload+'?name='+quote(file.name),data=data,headers={**headers,'Content-Type':'application/octet-stream'},method='POST')
+                  with urllib.request.urlopen(request,timeout=600) as response:asset=json.load(response)
+              if asset['size']!=len(data) or asset.get('digest')!=digest:raise RuntimeError('Asset verification failed: '+file.name)
+              print(json.dumps({'name':asset['name'],'size':asset['size'],'sha256':digest,'url':asset['browser_download_url']}))
+          if not get(f'{api}/releases/{release_id}')['draft']:raise RuntimeError('Preview was unexpectedly published')
+          PY
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: pr8-mac-${{ matrix.arch }}-e5c1ee5
+          path: |
+            delivery/
+            test-results/
+          compression-level: 0
+          retention-days: 7
