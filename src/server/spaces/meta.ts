@@ -37,7 +37,7 @@ export type SpaceMeta = {
   name: string;
   description: string;
   hue: number;
-  /** The saved flag, or undefined when the file has none (legacy detection then decides). */
+  /** The saved flag, or undefined when the space default and legacy detection decide. */
   educationEnabled: boolean | undefined;
   /** The saved model reference, unparsed (providers validate it). */
   model: string | undefined;
@@ -357,11 +357,16 @@ function legacyEducation(id: string, dir: string): boolean {
   return false;
 }
 
+/** The built-in School space starts with study tools; other spaces keep legacy detection. */
+function defaultEducation(id: string, dir: string): boolean {
+  return id === "school" || legacyEducation(id, dir);
+}
+
 // ---- Views ---------------------------------------------------------------------
 
 /**
  * The space as shown. Reading never writes: a space.json without
- * `educationEnabled` shows what legacy detection finds, and the answer is
+ * `educationEnabled` uses the space default or legacy detection, and the answer is
  * saved only when the space is used (`touchSpace`). The Rust core wrote
  * space.json for every such space on every list, which churned synced vaults.
  */
@@ -372,7 +377,7 @@ function view(id: string, dir: string): SpaceView {
     name: meta.name,
     description: meta.description,
     hue: meta.hue,
-    educationEnabled: meta.educationEnabled ?? legacyEducation(id, dir),
+    educationEnabled: meta.educationEnabled ?? defaultEducation(id, dir),
     lastUsed: readLastUsed(dir),
   };
 }
@@ -415,7 +420,7 @@ export function getSpace(id: string): SpaceView {
   return view(id, spaceDir(id));
 }
 
-/** Marks `id` used now (the core's clock), and freezes legacy education detection into space.json once. */
+/** Marks `id` used now (the core's clock), and saves the default education setting into space.json once. */
 export function touchSpace(id: string): void {
   const dir = spaceDir(id);
   try {
@@ -426,7 +431,7 @@ export function touchSpace(id: string): void {
   const { meta, canMigrate } = rawMeta(dir);
   if (canMigrate && typeof meta?.educationEnabled !== "boolean") {
     try {
-      writeMeta(dir, { ...(meta ?? {}), educationEnabled: legacyEducation(id, dir) });
+      writeMeta(dir, { ...(meta ?? {}), educationEnabled: defaultEducation(id, dir) });
     } catch {
       // Detection runs again next time.
     }

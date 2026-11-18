@@ -31,7 +31,7 @@ beforeEach(() => {
   ensureVault();
 });
 
-const plain = (id: string, name: string, hue: number): SpaceView => ({ id, name, description: "", hue, educationEnabled: false, lastUsed: null });
+const plain = (id: string, name: string, hue: number): SpaceView => ({ id, name, description: "", hue, educationEnabled: id === "school", lastUsed: null });
 
 describe("spaces", () => {
   it("defaults for a fresh vault", () => {
@@ -56,7 +56,7 @@ describe("spaces", () => {
     expect(fs.readFileSync(sp("work/.phaethon/space.json"), "utf8")).toBe(`{"name":"Job"}`);
   });
 
-  it("education is opt-in, and legacy study detection is saved once the space is used", () => {
+  it("custom spaces opt in, and legacy study detection is saved once the space is used", () => {
     const fresh = createSpace("School notes");
     expect(fresh.educationEnabled).toBe(false);
     expect(updateSpace(fresh.id, { educationEnabled: true }).educationEnabled).toBe(true);
@@ -70,11 +70,11 @@ describe("spaces", () => {
     expect(getSpace("work").educationEnabled).toBe(true);
     expect(updateSpace("work", { educationEnabled: false }).educationEnabled).toBe(false);
     // Plan files count when they hold more than an empty value.
-    fs.mkdirSync(sp("school/study"), { recursive: true });
-    fs.writeFileSync(sp("school/study/exams.json"), "[]");
-    expect(getSpace("school").educationEnabled).toBe(false);
-    fs.writeFileSync(sp("school/study/exams.json"), `[{"x":1}]`);
-    expect(getSpace("school").educationEnabled).toBe(true);
+    fs.mkdirSync(sp("plans/study"), { recursive: true });
+    fs.writeFileSync(sp("plans/study/exams.json"), "[]");
+    expect(getSpace("plans").educationEnabled).toBe(false);
+    fs.writeFileSync(sp("plans/study/exams.json"), `[{"x":1}]`);
+    expect(getSpace("plans").educationEnabled).toBe(true);
   });
 
   it("education migration never overwrites unreadable metadata", () => {
