@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { SearchField, SearchFieldAction } from "@/components/ui/search-field";
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
-import { ActionLabel, Header } from "@/app/Header";
+import { ActionLabel, Header, useViewActive } from "@/app/Header";
 import { useNav } from "@/app/store";
 import { cleanMessage, SurfaceError } from "@/components/errors";
 import { Icon, type IconData } from "@/components/icon";
@@ -67,7 +67,8 @@ const name = (c: CourseGradeView) => shortCourseName(c.course);
  * try on what's open.
  */
 export function GradesView({ space }: { space: SpaceView }) {
-  const grades = useLoad(() => lmsGrades(space.id), [space.id], "grades");
+  const active = useViewActive();
+  const grades = useLoad(() => lmsGrades(space.id), [space.id], "grades", active);
   const skeleton = useDelayed(grades.loading && !grades.data);
   const [seen] = useState(() => loadSeen(space.id));
   const [refresh, setRefresh] = useState<Refresh | null>(null);

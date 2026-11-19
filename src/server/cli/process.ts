@@ -145,7 +145,9 @@ const STDERR_CAP = 64 * 1024;
 export function spawnInGroup(bin: string, args: string[], opts: SpawnOptions): Promise<GroupChild> {
   const unix = process.platform !== "win32";
   const entry = unix ? null : npmShim(bin);
-  if (entry) {
+  if (entry && /\.exe$/i.test(entry)) {
+    bin = entry;
+  } else if (entry) {
     const node = process.versions.electron ? findOnPath("node", [path.dirname(bin), ...commonBinDirs()]) : process.execPath;
     if (!node) return Promise.reject(new Error("Node.js is needed to run this npm-installed assistant."));
     bin = node;

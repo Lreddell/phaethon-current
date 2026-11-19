@@ -35,7 +35,7 @@ describe("Codex app-server arguments", () => {
     expect(joined).toContain('-c approval_policy="never" -c web_search="disabled" -c default_permissions="phaethon"');
     expect(args).toContain('permissions.phaethon.filesystem={":minimal"="read","/vault/spaces/school"="read","/odd \\"dir\\"\\\\x"="read"}');
     expect(args).toContain("mcp_servers={}");
-    for (const f of DISABLED_FEATURES) expect(joined).toContain(`--disable ${f}`);
+    for (const f of DISABLED_FEATURES) expect(joined).toContain(`-c features.${f}=false`);
     expect(args.some((a) => a === "--add-dir" || a === "--sandbox" || a === "-s" || a.includes("write"))).toBe(false);
     const full = appServerArgsFull();
     expect(full).not.toContain('default_permissions="phaethon"');

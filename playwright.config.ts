@@ -10,7 +10,8 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
-  workers: 2,
+  // Windows CI can exhaust Chromium's network buffers when two apps start together.
+  workers: process.env.CI && process.platform === "win32" ? 1 : 2,
   reporter: [["list"]],
   use: {
     viewport: { width: 1280, height: 800 },

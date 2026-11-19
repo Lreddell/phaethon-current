@@ -5,7 +5,7 @@ import path from "node:path";
 import type { AgentEvent, ToolStatus } from "../../shared/agent.ts";
 import type { Outcome } from "./cli.ts";
 import { abortion, finishChild, type DriveContext, type Driver, type Invocation } from "./drive.ts";
-import { JsonRpcPeer, RpcError } from "./jsonrpc.ts";
+import { JsonRpcPeer, PeerClosed, RpcError } from "./jsonrpc.ts";
 import { sleep, stopGroup } from "./process.ts";
 import { commandLabel, commandLine, ToolEvents, type Granted } from "./tools.ts";
 
@@ -23,10 +23,13 @@ export const DISABLED_FEATURES = [
   "plugins",
   "apps",
   "multi_agent",
+  "multi_agent_v2",
   "goals",
   "view_image",
   "memories",
   "hooks",
+  "codex_hooks",
+  "plugin_hooks",
   "tool_suggest",
   "skill_search",
   "computer_use",
@@ -63,7 +66,9 @@ function shared(): string[] {
     // The app-server has no --ignore-user-config: no MCP server from any config.toml.
     "-c",
     "mcp_servers={}",
-    ...DISABLED_FEATURES.flatMap((f) => ["--disable", f]),
+    // --disable rejects flags absent from older CLI releases before RPC starts.
+    // Config overrides disable known features while tolerating absent names.
+    ...DISABLED_FEATURES.flatMap((f) => ["-c", `features.${f}=false`]),
   ];
 }
 
@@ -80,6 +85,9 @@ export function appServerArgs(readable: string[]): string[] {
     'default_permissions="phaethon"',
     "-c",
     `permissions.phaethon.filesystem=${filesystem}`,
+    // MXC can enforce these read boundaries without legacy administrator setup.
+    // Older CLIs ignore the unknown config key and keep their existing backend.
+    ...(process.platform === "win32" ? ["-c", "features.prefer_mxc=true"] : []),
     ...shared(),
   ];
 }
@@ -344,6 +352,10 @@ export const drive: Driver = async (gc, ctx, emit) => {
     peer.close();
     await finishChild(gc, ctx.run);
     return outcome;
+  } catch (e) {
+    // Let the caller surface the CLI's stderr if it exits before answering RPC.
+    if (e instanceof PeerClosed) return { kind: "incomplete", message: lastError };
+    throw e;
   } finally {
     peer.close();
   }

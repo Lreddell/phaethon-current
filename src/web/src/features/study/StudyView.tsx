@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
+import { useViewActive } from "@/app/Header";
 import { useNav } from "@/app/store";
 import { DeckEditor } from "./components/DeckEditor";
 import { useStudyFlow } from "./flow-store";
@@ -19,6 +20,7 @@ export type StudyScreen =
   | { kind: "deck"; path: string | null };
 
 export function StudyView({ space }: { space: SpaceView }) {
+  const active = useViewActive();
   // A screen asked for from elsewhere (a quiz made from a chat card) opens first.
   const [screen, setScreen] = useState<StudyScreen>(() => useStudyFlow.getState().take(space.id) ?? { kind: "overview" });
   const next = useStudyFlow((s) => (s.next?.space === space.id ? s.next.screen : null));
@@ -32,8 +34,8 @@ export function StudyView({ space }: { space: SpaceView }) {
   useEffect(() => {
     if (!retap || retap === seenRetap.current) return;
     seenRetap.current = retap;
-    setScreen({ kind: "overview" });
-  }, [retap]);
+    if (active) setScreen({ kind: "overview" });
+  }, [retap, active]);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {screen.kind === "overview" ? <Overview space={space} open={setScreen} /> : null}

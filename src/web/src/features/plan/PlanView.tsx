@@ -1,7 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
-import { ActionLabel, Header } from "@/app/Header";
+import { ActionLabel, Header, useViewActive } from "@/app/Header";
 import { useNav } from "@/app/store";
 import { cleanMessage, FieldError, SurfaceError } from "@/components/errors";
 import { Icon, type IconData } from "@/components/icon";
@@ -46,6 +46,7 @@ const DAYS_SHOWN = 7;
  * set from the left list. "Save as note" writes the plan to study/plan.md.
  */
 export function PlanView({ space }: { space: SpaceView }) {
+  const active = useViewActive();
   const data = useLoad<Data>(async () => {
     const [up, exams, state, overview] = await Promise.all([
       planUpcoming(space.id),
@@ -56,7 +57,7 @@ export function PlanView({ space }: { space: SpaceView }) {
     const decks: Record<string, string[]> = {};
     for (const d of overview?.decks ?? []) if (d.course) (decks[d.course] ??= []).push(d.title);
     return { courses: up.courses, items: up.items, exams, state, decks };
-  }, [space.id], "plan:data");
+  }, [space.id], "plan:data", active);
   const skeleton = useDelayed(data.loading && !data.data);
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState<Filter>({ show: "all", course: null });

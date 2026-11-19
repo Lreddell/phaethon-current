@@ -1,7 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
-import { Header } from "@/app/Header";
+import { Header, useViewActive } from "@/app/Header";
 import { cleanMessage, SurfaceError } from "@/components/errors";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
@@ -38,6 +38,7 @@ type Load = { cards: SessionCard[]; before: DeckSummary[] };
  * later. Ends on a summary of the session.
  */
 export function ReviewSession({ space, paths, title, onBack }: { space: SpaceView; paths: string[] | null; title?: string; onBack: () => void }) {
+  const active = useViewActive();
   const load = useLoad<Load>(
     async () => {
       const [cards, overview] = await Promise.all([studySession(space.id, paths), studyOverview(space.id).catch(() => null)]);
@@ -90,8 +91,9 @@ export function ReviewSession({ space, paths, title, onBack }: { space: SpaceVie
   );
 
   useEffect(() => {
+    if (!active) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || !card) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || e.isComposing || !card) return;
       const t = e.target as HTMLElement | null;
       if (t?.closest("input, textarea, [contenteditable=true], [role=menu], [role=dialog]")) return;
       if (!revealed && (e.key === " " || e.key === "Enter")) {
@@ -109,7 +111,7 @@ export function ReviewSession({ space, paths, title, onBack }: { space: SpaceVie
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [card, revealed, rate]);
+  }, [active, card, revealed, rate]);
 
   const total = queue?.length ?? 0;
   const deckTitle = (path: string) => load.data?.before.find((d) => d.path === path)?.title ?? baseName(path);

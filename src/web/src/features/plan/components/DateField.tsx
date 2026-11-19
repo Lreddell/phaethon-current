@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useState } from "react";
+import { type KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { Button } from "@/components/ui/button";
@@ -24,11 +24,26 @@ export function DateField({ id, value, today, invalid, onChange }: { id?: string
   const start = parts(value || today);
   const [month, setMonth] = useState<[number, number]>([start[0], start[1] - 1]);
   const [focus, setFocus] = useState(value || today);
+  const grid = useRef<HTMLDivElement>(null);
+  const moving = useRef(false);
+  useLayoutEffect(() => {
+    if (!open || !moving.current) return;
+    moving.current = false;
+    grid.current?.querySelector<HTMLButtonElement>(`[data-day="${focus}"]`)?.focus();
+  }, [focus, open]);
   const [y, m] = month;
   const lead = new Date(Date.UTC(y, m, 1)).getUTCDay();
   const length = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
   const cells = [...Array.from({ length: lead }, () => null), ...Array.from({ length }, (_, i) => iso(y, m, i + 1))];
-  const shift = (n: number) => setMonth(([yy, mm]) => [new Date(Date.UTC(yy, mm + n, 1)).getUTCFullYear(), new Date(Date.UTC(yy, mm + n, 1)).getUTCMonth()]);
+  const shift = (n: number) => {
+    const next = new Date(Date.UTC(y, m + n, 1));
+    const yy = next.getUTCFullYear();
+    const mm = next.getUTCMonth();
+    const last = new Date(Date.UTC(yy, mm + 1, 0)).getUTCDate();
+    setMonth([yy, mm]);
+    // Keep one date in the displayed month in the Tab order, including short months.
+    setFocus(iso(yy, mm, Math.min(parts(focus)[2], last)));
+  };
 
   const onOpenChange = (o: boolean) => {
     if (o) {
@@ -45,9 +60,10 @@ export function DateField({ id, value, today, invalid, onChange }: { id?: string
     const [fy, fm, fd] = parts(focus);
     const next = iso(fy, fm - 1, fd + step);
     const [ny, nm] = parts(next);
+    // Move focus after React commits the days, including when the month changes.
+    moving.current = true;
     setFocus(next);
     setMonth([ny, nm - 1]);
-    requestAnimationFrame(() => (e.currentTarget?.querySelector(`[data-day="${next}"]`) as HTMLElement | null)?.focus());
   };
 
   return (
@@ -78,7 +94,7 @@ export function DateField({ id, value, today, invalid, onChange }: { id?: string
               </span>
             ))}
           </div>
-          <div role="group" aria-label={`${MONTHS[m]} ${y}`} className="grid grid-cols-7 gap-y-0.5" onKeyDown={move}>
+          <div ref={grid} role="group" aria-label={`${MONTHS[m]} ${y}`} className="grid grid-cols-7 gap-y-0.5" onKeyDown={move}>
             {cells.map((day, i) =>
               day ? (
                 <button

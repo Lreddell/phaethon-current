@@ -68,15 +68,20 @@ function cliModels(cli: "claude" | "codex" | "gemini", catalog: CliModels): Cata
   return [{ backend, model: null, name: `${CLI_INFO[cli].name} default`, efforts: def?.reasoningEfforts ?? [], defaultEffort: def?.defaultReasoningEffort }, ...rows];
 }
 
+// An account refresh invalidates model requests started for the previous account.
+let generation = 0;
+
 export const useCatalog = create<Catalog>((set, get) => ({
   status: "idle",
   groups: [],
 
   async load(force = false) {
     if (!force && (get().status === "loading" || get().status === "ready")) return;
+    const current = ++generation;
     set({ status: "loading", error: undefined });
     try {
       const [settings, clis] = await Promise.all([getSettings(), invoke<CliStatus[]>("agent_clis_status").catch(() => [] as CliStatus[])]);
+      if (current !== generation) return;
       const prev = new Map(get().groups.map((g) => [g.id, g]));
       const own: CatalogGroup[] = settings.providers
         .filter((p) => isAdded(p) || p.id === settings.provider || p.id === "anthropic")
@@ -113,14 +118,17 @@ export const useCatalog = create<Catalog>((set, get) => ({
         });
       set({ status: "ready", settings, groups: [...own, ...agents] });
     } catch (e) {
-      set({ status: "error", error: errorText(e) });
+      if (current === generation) set({ status: "error", error: errorText(e) });
     }
   },
 
   async loadModels(groupId) {
     const g = get().groups.find((x) => x.id === groupId);
     if (!g || g.status === "loading" || g.status === "ready") return;
-    const patch = (p: Partial<CatalogGroup>) => set((s) => ({ groups: s.groups.map((x) => (x.id === groupId ? { ...x, ...p } : x)) }));
+    const current = generation;
+    const patch = (p: Partial<CatalogGroup>) => {
+      if (current === generation) set((s) => ({ groups: s.groups.map((x) => (x.id === groupId ? { ...x, ...p } : x)) }));
+    };
     patch({ status: "loading", error: undefined });
     try {
       if (g.backend === "phaethon") {

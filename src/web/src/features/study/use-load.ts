@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useEffect, useId } from "react";
 import { useQuery, type QueryKey } from "@/lib/query";
 
 export type Loaded<T> = { data?: T; error?: unknown; loading: boolean; fetching: boolean; reload: () => void; setData: (f: (d: T | undefined) => T | undefined) => void };
@@ -9,11 +9,16 @@ export type Loaded<T> = { data?: T; error?: unknown; loading: boolean; fetching:
  * (a revisit shows its last answer at once and refreshes quietly) and
  * `fetching` while any read runs. With a `key`, screens reading the same
  * thing share it; without one, the cache is this component's own.
+ * A retained screen can pass `active` to refresh when it becomes visible,
+ * keeping the shared cached data and its current UI state while it reloads.
  */
-export function useLoad<T>(load: () => Promise<T>, deps: readonly unknown[], key?: QueryKey): Loaded<T> {
+export function useLoad<T>(load: () => Promise<T>, deps: readonly unknown[], key?: QueryKey, active?: boolean): Loaded<T> {
   const own = useId();
   const k: unknown[] = key === undefined ? ["own", own] : typeof key === "string" ? [key] : [...key];
   const q = useQuery<T>([...k, ...deps], load);
+  useEffect(() => {
+    if (active) void q.reload();
+  }, [active, q.reload]);
   return {
     data: q.data,
     error: q.error,
