@@ -59,7 +59,7 @@ commands({
 
   lms_courses: (a: { connection: unknown }) => courses(str(a.connection, "The connection")),
 
-  lms_import: async (a: { connection: unknown; courseIds: unknown; spaces: unknown; onEvent?: Channel<ImportEvent> }) => {
+  lms_import: async (a: { connection: unknown; courseIds: unknown; spaces: unknown; update?: unknown; onEvent?: Channel<ImportEvent> }) => {
     const send = (e: ImportEvent) => a.onEvent?.send(e);
     let connection: string;
     let ids: string[];
@@ -73,7 +73,7 @@ commands({
       send({ type: "done" });
       return null;
     }
-    await importCourses(connection, ids, spaces, send);
+    await importCourses(connection, ids, spaces, send, a.update === true);
     return null;
   },
 

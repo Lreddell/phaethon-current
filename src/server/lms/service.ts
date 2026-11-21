@@ -305,7 +305,7 @@ function raceAbort<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
 }
 
 /** Import the chosen courses. Results come as events; always ends with exactly one `done`. */
-export async function importCourses(id: string, courseIds: string[], spaces: string[], emit: (e: ImportEvent) => void): Promise<void> {
+export async function importCourses(id: string, courseIds: string[], spaces: string[], emit: (e: ImportEvent) => void, refresh = false): Promise<void> {
   try {
     for (const s of spaces) {
       try {
@@ -321,7 +321,7 @@ export async function importCourses(id: string, courseIds: string[], spaces: str
     running.set(id, abort);
     try {
       const s = session(id).withSignal(abort.signal);
-      await importWith(id, s, courseIds, spaces, abort.signal, emit);
+      await importWith(id, s, courseIds, refresh ? [] : spaces, abort.signal, emit, refresh);
     } finally {
       importing.delete(root);
       if (running.get(id) === abort) running.delete(id);
@@ -343,18 +343,28 @@ function gradeRec(connection: string, courseId: string, course: string, folder: 
   return { connection, courseId, course, folder: `${COURSES_DIR}/${folder}`, updated: nowMs(), ...grades };
 }
 
-async function importWith(id: string, s: Session, courseIds: string[], spaces: string[], signal: AbortSignal, emit: (e: ImportEvent) => void): Promise<void> {
+async function importWith(id: string, s: Session, courseIds: string[], spaces: string[], signal: AbortSignal, emit: (e: ImportEvent) => void, refresh: boolean): Promise<void> {
   const root = vaultRoot();
   const wanted = new Set(courseIds);
   let list;
   try {
-    list = await raceAbort(readCourses(s), signal);
+    if (refresh) {
+      // An imported course can disappear from the enrollment list while its
+      // content is still accessible. Refresh only IDs already in the vault.
+      const saved = getConn(load(root), id)?.courses ?? {};
+      list = [...wanted].filter((cid) => Object.hasOwn(saved, cid)).map((cid) => {
+        const { name, code, term } = saved[cid];
+        return { id: cid, name, code, term, current: false };
+      });
+    } else {
+      list = await raceAbort(readCourses(s), signal);
+    }
   } catch (e) {
     if (isCancelled(e) || signal.aborted) throw new Error(CANCELLED);
     throw new Error(ended(id, lmsError(e)));
   }
   const chosen = list.filter((c) => wanted.has(c.id));
-  if (chosen.length < wanted.size) emit({ type: "error", message: "Some of the chosen courses aren’t on the course site any more." });
+  if (chosen.length < wanted.size) emit({ type: "error", message: refresh ? "Some of the chosen courses are no longer imported." : "Some of the chosen courses aren’t on the course site any more." });
   let coursesRoot: string;
   try {
     coursesRoot = dirIn(realRoot(root), COURSES_DIR);
