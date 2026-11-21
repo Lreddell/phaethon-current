@@ -263,7 +263,7 @@ export function MakeDialog({
             </div>
           </DialogHeader>
 
-          <DialogPanel className="space-y-0 px-6 pt-1 pb-2">
+          <DialogPanel scrollAreaClassName="flex flex-col [&>[data-slot=scroll-area-viewport]]:min-h-0" className="space-y-0 px-6 pt-1 pb-2">
             <Slide id={phase} dir={dir}>
               {phase === "what" ? (
                 <WhatStep
