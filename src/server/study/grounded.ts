@@ -30,6 +30,8 @@ import type { Seen, Visible } from "./visible.ts";
 
 export const ROUNDS = 3;
 const CHECK_BATCH = 12;
+// Keep long sets within a model's output limit; each batch still passes the same grounding gates.
+const WRITE_BATCH = 25;
 const AROUND = 700;
 const CITES_MAX = 3;
 const BUDGET = 100_000;
@@ -48,6 +50,7 @@ export class Library {
     private readonly space: string,
     private readonly visible: Visible,
     files: readonly CourseFile[],
+    private readonly onlyChosen = false,
   ) {
     this.docs = files.map((f) => ({ label: f.label, text: f.text }));
   }
@@ -60,6 +63,7 @@ export class Library {
     const labels = this.docs.map((d) => d.label);
     const l = sources.matchLabel(source, labels);
     if (l !== null) return this.docs.find((d) => d.label === l)!;
+    if (this.onlyChosen) throw `a file outside the chosen material: ${source}`;
     const c = sources.readCited(this.space, this.visible, source);
     const have = this.docs.find((d) => d.label === c.label);
     if (have) return have;
@@ -629,16 +633,41 @@ export function interleave<T>(items: readonly T[], topicOf: (t: T) => string): T
   return out;
 }
 
+/** Divide a topic allocation into bounded replies without changing each topic's total. */
+function writingBatches(need: readonly [Topic, number][]): [Topic, number][][] {
+  const batches: [Topic, number][][] = [];
+  let batch: [Topic, number][] = [];
+  let room = WRITE_BATCH;
+  for (const [topic, count] of need) {
+    let remaining = count;
+    while (remaining > 0) {
+      const take = Math.min(room, remaining);
+      batch.push([topic, take]);
+      remaining -= take;
+      room -= take;
+      if (room === 0) {
+        batches.push(batch);
+        batch = [];
+        room = WRITE_BATCH;
+      }
+    }
+  }
+  if (batch.length) batches.push(batch);
+  return batches;
+}
+
 export async function make(space: string, visible: Visible, inputs: readonly string[], want: Want, ask: Ask, model: Model, emit: Emit, now: number): Promise<Made> {
   const seen = sources.courseOf(space, visible, [...inputs]);
-  const files = seen ? sources.courseFiles(visible, seen) : [];
+  const courseFiles = seen ? sources.courseFiles(visible, seen) : [];
+  const files = courseFiles.length ? sources.selectCourseFiles(space, visible, inputs, courseFiles) : [];
   let s: Scoped;
   let mat: Material;
   let vocabFiles: CourseFile[];
   if (seen && files.length) {
     const exams = loadExams(space);
     try {
-      s = await scoped(visible, seen, files, exams, ask.exam, ask.focus, ask.count, model, emit, now);
+      // Exam scope comes from the whole course; teaching evidence comes only from the chosen parts.
+      s = await scoped(visible, seen, courseFiles, exams, ask.exam, ask.focus, ask.count, model, emit, now);
     } catch (e) {
       if (e instanceof ScopeError) {
         if (e.unknown) emit({ type: "needsScope", ...e.unknown });
@@ -667,7 +696,7 @@ export async function make(space: string, visible: Visible, inputs: readonly str
     }
   }
   emit(progress("reading", 1, 1));
-  const library = new Library(space, visible, vocabFiles);
+  const library = new Library(space, visible, vocabFiles, true);
   const vocab = new Set<string>();
   for (const f of vocabFiles) sources.wordsOf(f.text, vocab);
   const courseName = seen ? seen.state.name : "your material";
@@ -687,7 +716,7 @@ export async function make(space: string, visible: Visible, inputs: readonly str
   const droppedTopics: (string | null)[] = [];
   let title: string | null = null;
   const seed = { value: BigInt(now) | 1n };
-  for (let round = 0; round < ROUNDS; round++) {
+  rounds: for (let round = 0; round < ROUNDS; round++) {
     const have = (id: string) => kept.filter((c) => (c.topic ?? "") === id).length;
     const need: [Topic, number][] = target.map(([t, n]) => [t, Math.max(n - have(t.id), 0)] as [Topic, number]).filter(([, n]) => n > 0);
     if (!need.length) break;
@@ -699,50 +728,52 @@ export async function make(space: string, visible: Visible, inputs: readonly str
       );
       for (let k = 0; k < extra; k++) need[byWeight[k % byWeight.length]!]![1]++;
     }
-    emit(progress("making", round, ROUNDS));
-    const keptTexts = [...kept.map((c) => itemText(c.item)), ...existing];
-    const user = writeRequest(s, want, mat, need, keptTexts, dropped, ask.context, ask.extra, notation) + material.picturesNote(writingPictures);
-    let reply: string;
-    try {
-      reply = await model.completeSeeing(system, user, writingPictures);
-    } catch (e) {
-      if (!kept.length) throw e;
-      dropped.push({ text: "", why: `writing more stopped: ${typeof e === "string" ? e : (e as Error).message}` });
-      droppedTopics.push(null);
-      break;
-    }
-    const v = extractJson(reply);
-    if (v === undefined) {
-      if (round + 1 === ROUNDS && !kept.length) throw "The model’s answer had nothing usable in it, so nothing was saved. Try again.";
-      continue;
-    }
-    title ??= titleOf(v);
-    const cands = sortReply(v, want, s, mat, library, vocab, dropped, droppedTopics);
-    const fresh: Candidate[] = [];
-    for (const c of cands) {
-      const t = itemText(c.item);
-      if ([...kept, ...fresh].some((k) => similar(itemText(k.item), t)) || existing.some((e) => similar(e, t))) continue;
-      fresh.push(c);
-    }
-    if (!fresh.length) continue;
-    let verdicts: (string | null)[];
-    try {
-      verdicts = await verify(s, courseName, notation, fresh, model, picturesOf, emit, kept.length, dropped.length);
-    } catch (e) {
-      // A later round's check failing keeps what already passed.
-      if (!kept.length) throw e;
-      dropped.push({ text: "", why: `checking more stopped: ${typeof e === "string" ? e : (e as Error).message}` });
-      droppedTopics.push(null);
-      break;
-    }
-    fresh.forEach((c, i) => {
-      const why = verdicts[i] ?? null;
-      if (why === null) kept.push(c);
-      else {
-        dropped.push({ text: itemText(c.item), why });
-        droppedTopics.push(c.topic);
+    for (const batch of writingBatches(need)) {
+      emit(progress("making", round, ROUNDS));
+      const keptTexts = [...kept.map((c) => itemText(c.item)), ...existing];
+      const user = writeRequest(s, want, mat, batch, keptTexts, dropped, ask.context, ask.extra, notation) + material.picturesNote(writingPictures);
+      let reply: string;
+      try {
+        reply = await model.completeSeeing(system, user, writingPictures);
+      } catch (e) {
+        if (!kept.length) throw e;
+        dropped.push({ text: "", why: `writing more stopped: ${typeof e === "string" ? e : (e as Error).message}` });
+        droppedTopics.push(null);
+        break rounds;
       }
-    });
+      const v = extractJson(reply);
+      if (v === undefined) {
+        if (round + 1 === ROUNDS && !kept.length) throw "The model’s answer had nothing usable in it, so nothing was saved. Try again.";
+        continue;
+      }
+      title ??= titleOf(v);
+      const cands = sortReply(v, want, s, mat, library, vocab, dropped, droppedTopics);
+      const fresh: Candidate[] = [];
+      for (const c of cands) {
+        const t = itemText(c.item);
+        if ([...kept, ...fresh].some((k) => similar(itemText(k.item), t)) || existing.some((e) => similar(e, t))) continue;
+        fresh.push(c);
+      }
+      if (!fresh.length) continue;
+      let verdicts: (string | null)[];
+      try {
+        verdicts = await verify(s, courseName, notation, fresh, model, picturesOf, emit, kept.length, dropped.length);
+      } catch (e) {
+        // A later round's check failing keeps what already passed.
+        if (!kept.length) throw e;
+        dropped.push({ text: "", why: `checking more stopped: ${typeof e === "string" ? e : (e as Error).message}` });
+        droppedTopics.push(null);
+        break rounds;
+      }
+      fresh.forEach((c, i) => {
+        const why = verdicts[i] ?? null;
+        if (why === null) kept.push(c);
+        else {
+          dropped.push({ text: itemText(c.item), why });
+          droppedTopics.push(c.topic);
+        }
+      });
+    }
   }
   // Each topic's share; extras fill topics that fell short, heaviest first.
   const chosen: number[] = [];

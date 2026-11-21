@@ -149,7 +149,7 @@ export function parse(block: string): Action {
   const k = asciiLower(o.kind.trim());
   const kind: Kind | null = k === "quiz" ? "quiz" : ["deck", "flashcards", "cards"].includes(k) ? "deck" : null;
   if (!kind) throw bad(`“${o.kind.trim()}” isn’t a quiz or flashcards`);
-  const [max, dflt, noun] = kind === "quiz" ? [50, 10, "questions"] : [100, 20, "cards"];
+  const [max, dflt, noun] = kind === "quiz" ? [100, 10, "questions"] : [100, 20, "cards"];
   const notes: string[] = [];
   let count: number;
   if (o.count === undefined || o.count === null) count = dflt;

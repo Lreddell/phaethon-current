@@ -54,7 +54,7 @@ describe("the draft", () => {
     expect(d.chat).toEqual({ origin: "o1", context: "The student asked:\nquiz me for test 1" });
     // Topics without a test; a stated scope comes along; counts are held to the most made at once.
     const t = draftFromPlan(plan({ focus: "induction", count: 400, kinds: [], scope: { exam: "Final", state: "known", words: "all of it", fromUser: true, evidence: [], course: BIO, courseName: "Cell Biology" } }), [LOGIC, BIO], "");
-    expect(t).toMatchObject({ target: "topics", focus: "induction", count: 50, course: BIO, covers: "all of it", kinds: emptyDraft("quiz").kinds });
+    expect(t).toMatchObject({ target: "topics", focus: "induction", count: 100, course: BIO, covers: "all of it", kinds: emptyDraft("quiz").kinds });
     expect(t.chat?.context).toBe("");
     // A course the space doesn't have is left for the person to pick.
     const elsewhere = draftFromPlan(plan({ sources: [{ path: "courses/Gone", name: "Gone" }] }), [LOGIC, BIO], "");
