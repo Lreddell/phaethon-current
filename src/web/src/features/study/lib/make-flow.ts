@@ -36,8 +36,8 @@ export type MakeDraft = {
 };
 
 export const DEFAULT_KINDS: QuestionKind[] = ["choice", "multi", "truefalse", "short"];
-export const SIZES: Record<MakeKind, number[]> = { quiz: [5, 10, 15, 25], deck: [10, 20, 30, 50] };
-export const MAX_COUNT: Record<MakeKind, number> = { quiz: 50, deck: 100 };
+export const SIZES: Record<MakeKind, number[]> = { quiz: [10, 25, 50, 100], deck: [10, 20, 50, 100] };
+export const MAX_COUNT: Record<MakeKind, number> = { quiz: 100, deck: 100 };
 
 export function emptyDraft(kind: MakeKind, course: string | null = null): MakeDraft {
   return { kind, course, files: [], target: "exam", exam: "", focus: "", covers: "", count: kind === "quiz" ? 10 : 20, kinds: [...DEFAULT_KINDS], difficulty: "exam", title: "" };
