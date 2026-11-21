@@ -2,7 +2,7 @@ import { AnimatePresence } from "motion/react";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { api, type SpaceView } from "@/app/api";
-import { useViewActive } from "@/app/Header";
+import { Header, useViewActive } from "@/app/Header";
 import { chatKey, DRAFT, NO_SPACES, useNav, useOpenThread } from "@/app/store";
 import { SurfaceError } from "@/components/errors";
 import { BrandMark } from "@/components/brand-mark";
@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { SkeletonTurns } from "@/components/skeletons";
 import { toast } from "@/components/toast";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
-import { ChatCourseUpdate } from "@/features/courses/components/ChatCourseUpdate";
+import { useChatCourseUpdate } from "@/features/courses/components/ChatCourseUpdate";
 import { useDelayed } from "@/hooks/use-delayed";
 import { errorText } from "@/lib/core";
 import { cn } from "@/lib/utils";
@@ -73,6 +73,7 @@ function HeaderActions({ space, thread }: { space: SpaceView; thread: string }) 
 }
 
 export function ChatView({ space }: { space: SpaceView }) {
+  const canvas = useChatCourseUpdate(space);
   const thread = useOpenThread(space.id);
   const key = chatKey(space.id, thread);
   const chat = useConv(space.id, thread);
@@ -173,9 +174,8 @@ export function ChatView({ space }: { space: SpaceView }) {
 
   return (
     <div className="@container/chat relative flex min-h-0 flex-1 flex-col">
-      <ChatCourseUpdate space={space} title={title}>
-        <HeaderActions space={space} thread={thread} />
-      </ChatCourseUpdate>
+      <Header title={title} actions={<HeaderActions space={space} thread={thread} />} />
+      {canvas?.panel}
       {/* One composer per conversation, keyed by it, so each keeps its own draft, files and edit. */}
       {failed ? (
         <div className="mx-auto w-full max-w-(--chat-max-width) flex-1 px-4 pt-8">
@@ -250,7 +250,7 @@ export function ChatView({ space }: { space: SpaceView }) {
         </AnimatePresence>
         {/* Above the limit card, whose bottom edge tucks under the composer (ref fd96). */}
         <div className="relative z-10">
-          <Composer key={composer.current.key} draftKey={key} space={space} edit={edit} onEditDone={() => setEdit(null)} hero={empty} />
+          <Composer key={composer.current.key} draftKey={key} space={space} edit={edit} onEditDone={() => setEdit(null)} hero={empty} dataControls={canvas?.control} />
         </div>
       </div>
       {empty ? <Welcome space={space} draftKey={key} /> : null}

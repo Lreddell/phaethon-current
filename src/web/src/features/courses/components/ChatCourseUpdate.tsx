@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ActionLabel, Header, useViewActive } from "@/app/Header";
+import { useEffect, useMemo, useState } from "react";
+import { useViewActive } from "@/app/Header";
 import type { SpaceView } from "@/app/api";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
@@ -7,7 +7,9 @@ import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { relativeTime } from "@/lib/platform";
+import { cn } from "@/lib/utils";
 import { endText } from "../lib/import-run";
 import { visibleCourses } from "../lib/selection";
 import { whenText } from "../lib/sites";
@@ -18,8 +20,8 @@ import { CourseProgress } from "./ImportRun";
 
 const STALE_AFTER = 24 * 60 * 60 * 1000;
 
-/** Stay in chat throughout a Canvas update. Only courses this space can use are included. */
-export function ChatCourseUpdate({ space, title, children }: { space: SpaceView; title: string; children: ReactNode }) {
+/** Canvas controls for the composer and the chat's right gutter, scoped to this space. */
+export function useChatCourseUpdate(space: SpaceView) {
   const active = useViewActive();
   const connections = useCourses((s) => s.connections.data);
   const access = useCourses((s) => s.access.data);
@@ -53,7 +55,7 @@ export function ChatCourseUpdate({ space, title, children }: { space: SpaceView;
     return () => window.clearInterval(timer);
   }, [active, hasCourses]);
 
-  if (!active || !hasCourses) return <Header title={title} actions={children} />;
+  if (!active || !hasCourses) return null;
 
   // The oldest snapshot is the most recent time we can say all of these
   // courses were up to date, even if a newer run refreshed only some of them.
@@ -70,30 +72,37 @@ export function ChatCourseUpdate({ space, title, children }: { space: SpaceView;
   const runStatus = canvasRun && (running ? `${completed} of ${canvasRun.courses.length} courses` : endText(canvasRun));
   const reconnect = connections?.find((c) => c.id === canvasRun?.signInConnection);
   const update = () => startUpdate(space.id, courses);
+  const label = running ? "Stop Canvas update" : reconnect ? "Sign in to Canvas" : "Update Canvas";
+  const icon = running ? icons.stop : reconnect ? icons.signIn : icons.reload;
+  const statusLine = running || canvasRun?.status === "failed" ? runStatus : status;
+  const detail = canvasRun?.cancelError ?? canvasRun?.error ?? (running ? runStatus : timestamp);
+  const control = (
+    <div className="flex shrink-0 items-center gap-1">
+      <span className="hidden text-subtle-foreground text-xs tabular-nums @min-[38rem]/composer:inline">{statusLine}</span>
+      <Tooltip>
+        <TooltipTrigger render={
+          <Button
+            size="icon-xs"
+            variant="ghost-muted"
+            className={cn(stale && !canvasRun && "text-warning-foreground")}
+            aria-label={label}
+            disabled={running ? canvasRun.cancelling : busy}
+            onClick={running ? () => void cancelUpdate() : reconnect ? () => setAgain(reconnect) : update}
+          />
+        }>
+          {canvasRun?.cancelling ? <Spinner size="xs" /> : <Icon icon={icon} />}
+          {running ? <CourseProgress run={canvasRun} decorative className="pointer-events-none absolute inset-x-1 bottom-0 overflow-hidden rounded-full" /> : null}
+        </TooltipTrigger>
+        <TooltipPopup>{label} · {detail}</TooltipPopup>
+      </Tooltip>
+    </div>
+  );
 
-  return (
+  const panel = (
     <>
-      <Header title={title} actions={
-        <>
-          <span className="mr-1 text-subtle-foreground text-xs tabular-nums @max-3xl/header:hidden" title={timestamp}>{running ? runStatus : status}</span>
-          {running ? (
-            <Button size="sm" variant="outline" disabled={canvasRun.cancelling} onClick={() => void cancelUpdate()} title={canvasRun.cancelError ?? runStatus ?? undefined}>
-              {canvasRun.cancelling ? <Spinner size="sm" /> : <Icon icon={icons.stop} />}
-              <ActionLabel>{canvasRun.cancelling ? "Stopping…" : "Stop update"}</ActionLabel>
-              <CourseProgress run={canvasRun} decorative className="pointer-events-none absolute inset-x-2 bottom-0.5 overflow-hidden rounded-full" />
-            </Button>
-          ) : (
-            <Button size="sm" variant={stale && !canvasRun ? "warning-outline" : "outline"} disabled={busy} onClick={reconnect ? () => setAgain(reconnect) : update} title={runStatus || timestamp}>
-              <Icon icon={reconnect ? icons.signIn : icons.reload} />
-              <ActionLabel>{reconnect ? "Sign in to Canvas" : "Update Canvas"}</ActionLabel>
-            </Button>
-          )}
-          {children}
-        </>
-      } />
       {canvasRun || (stale && !busy) ? (
         // This gutter begins outside the centred 46rem conversation and
-        // composer. At smaller widths the title-bar control carries the state.
+        // composer. The composer control also works in a narrow window.
         <aside aria-label="Canvas update" className="absolute top-3 right-4 z-10 hidden w-56 @min-[78rem]/chat:block">
           {canvasRun ? (
             <Card className="gap-1 px-3 py-2.5 text-xs">
@@ -130,4 +139,5 @@ export function ChatCourseUpdate({ space, title, children }: { space: SpaceView;
       <ConnectDialog open={!!again} again={again} onOpenChange={(o) => !o && setAgain(null)} onConnected={() => useCourses.getState().dismissRun()} />
     </>
   );
+  return { control, panel };
 }
