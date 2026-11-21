@@ -142,7 +142,8 @@ export const useCourses = create<Courses>((set, get) => ({
     const sites = [...targets.values()];
     if (!sites.length) return;
     const rows = sites.flatMap(({ connection, courses }) => courses.map((c) => ({ id: `${connection.id}/${c.id}`, name: c.name })));
-    const run = { ...newRun(++runKey, space, [], sites[0].connection.id, connectionName(sites[0].connection), rows), update: true };
+    const school = sites.length === 1 ? connectionName(sites[0].connection) : "";
+    const run = { ...newRun(++runKey, space, [], sites[0].connection.id, school, rows), update: true };
     set({ run });
     void importSites(sites, run, get, set).finally(get().load);
   },

@@ -1,4 +1,5 @@
 import { spaceDir, vaultName } from "../core/vault.ts";
+import { canTrash } from "../files/manage.ts";
 import { onStart } from "../lifecycle.ts";
 import { log } from "../log.ts";
 import type { Channel } from "../rpc/channel.ts";
@@ -13,6 +14,7 @@ import {
   cancelImport,
   connections,
   courses,
+  deleteCourse,
   disconnect,
   finishSignIn,
   grades,
@@ -80,6 +82,11 @@ commands({
   lms_import_cancel: (a: { connection: unknown }) => cancelImport(str(a.connection, "The connection")),
 
   lms_course_content: (a: { space: unknown; course: unknown }) => courseContent(str(a.space, "The space"), str(a.course, "The course")),
+
+  lms_course_can_trash: () => canTrash(),
+
+  lms_course_delete: (a: { connection: unknown; courseId: unknown }) =>
+    deleteCourse(str(a.connection, "The connection"), str(a.courseId, "The course")),
 
   lms_disconnect: (a: { connection: unknown }) => {
     disconnect(str(a.connection, "The connection"));

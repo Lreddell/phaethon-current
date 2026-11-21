@@ -5,14 +5,16 @@ import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { relativeTime } from "@/lib/platform";
+import { endText } from "../lib/import-run";
 import { visibleCourses } from "../lib/selection";
 import { whenText } from "../lib/sites";
 import type { LmsConnection } from "../lib/types";
 import { useCourses } from "../store";
 import { ConnectDialog } from "./ConnectDialog";
-import { ImportRun } from "./ImportRun";
+import { CourseProgress } from "./ImportRun";
 
 const STALE_AFTER = 24 * 60 * 60 * 1000;
 
@@ -25,6 +27,8 @@ export function ChatCourseUpdate({ space, title, children }: { space: SpaceView;
   const loadAccess = useCourses((s) => s.loadAccess);
   const run = useCourses((s) => s.run);
   const startUpdate = useCourses((s) => s.startUpdate);
+  const cancelUpdate = useCourses((s) => s.cancelImport);
+  const dismissRun = useCourses((s) => s.dismissRun);
   const [again, setAgain] = useState<LmsConnection | null>(null);
   const [now, setNow] = useState(Date.now);
   const [dismissedAt, setDismissedAt] = useState<number>();
@@ -61,6 +65,9 @@ export function ChatCourseUpdate({ space, title, children }: { space: SpaceView;
   const timestamp = updated ? `Oldest course update · ${whenText(updated, now)}` : status;
   const busy = run?.status === "running";
   const canvasRun = run?.update && run.space === space.id && run.courses.every((row) => courses.some((c) => c.key === row.id)) ? run : null;
+  const running = canvasRun?.status === "running";
+  const completed = canvasRun?.courses.filter((c) => c.result || c.failed).length ?? 0;
+  const runStatus = canvasRun && (running ? `${completed} of ${canvasRun.courses.length} courses` : endText(canvasRun));
   const reconnect = connections?.find((c) => c.id === canvasRun?.signInConnection);
   const update = () => startUpdate(space.id, courses);
 
@@ -68,32 +75,57 @@ export function ChatCourseUpdate({ space, title, children }: { space: SpaceView;
     <>
       <Header title={title} actions={
         <>
-          <span className="mr-1 text-subtle-foreground text-xs tabular-nums @max-3xl/header:hidden" title={timestamp}>{status}</span>
-          <Button size="sm" variant="outline" disabled={busy} onClick={update} title={timestamp}>
-            {busy && canvasRun ? <Spinner size="sm" /> : <Icon icon={icons.reload} />}
-            <ActionLabel>{busy && canvasRun ? "Updating…" : "Update Canvas"}</ActionLabel>
-          </Button>
+          <span className="mr-1 text-subtle-foreground text-xs tabular-nums @max-3xl/header:hidden" title={timestamp}>{running ? runStatus : status}</span>
+          {running ? (
+            <Button size="sm" variant="outline" disabled={canvasRun.cancelling} onClick={() => void cancelUpdate()} title={canvasRun.cancelError ?? runStatus ?? undefined}>
+              {canvasRun.cancelling ? <Spinner size="sm" /> : <Icon icon={icons.stop} />}
+              <ActionLabel>{canvasRun.cancelling ? "Stopping…" : "Stop update"}</ActionLabel>
+              <CourseProgress run={canvasRun} decorative className="pointer-events-none absolute inset-x-2 bottom-0.5 overflow-hidden rounded-full" />
+            </Button>
+          ) : (
+            <Button size="sm" variant={stale && !canvasRun ? "warning-outline" : "outline"} disabled={busy} onClick={reconnect ? () => setAgain(reconnect) : update} title={runStatus || timestamp}>
+              <Icon icon={reconnect ? icons.signIn : icons.reload} />
+              <ActionLabel>{reconnect ? "Sign in to Canvas" : "Update Canvas"}</ActionLabel>
+            </Button>
+          )}
           {children}
         </>
       } />
       {canvasRun || (stale && !busy) ? (
-        <div className="ml-auto w-full max-w-lg shrink-0 px-4 pt-3">
+        // This gutter begins outside the centred 46rem conversation and
+        // composer. At smaller widths the title-bar control carries the state.
+        <aside aria-label="Canvas update" className="absolute top-3 right-4 z-10 hidden w-56 @min-[78rem]/chat:block">
           {canvasRun ? (
-            <ImportRun run={canvasRun} onSignInAgain={() => reconnect && setAgain(reconnect)} compact />
+            <Card className="gap-1 px-3 py-2.5 text-xs">
+              <CourseProgress run={canvasRun} className="absolute inset-x-0 top-0" />
+              <div className="flex items-center gap-1.5">
+                {running ? <Spinner size="xs" /> : <Icon icon={canvasRun.status === "failed" ? icons.warning : icons.courses} className="size-3.5 shrink-0" />}
+                <p className="min-w-0 flex-1 font-medium">{running ? "Updating Canvas…" : runStatus}</p>
+                {!running ? (
+                  <Button size="icon-xs" variant="ghost-muted" aria-label="Dismiss Canvas update" onClick={dismissRun}>
+                    <Icon icon={icons.close} />
+                  </Button>
+                ) : null}
+              </div>
+              {running ? <p className="pl-5 text-muted-foreground tabular-nums">{runStatus}</p> : null}
+              {canvasRun.cancelError ? <p className="text-destructive-foreground [overflow-wrap:anywhere]">{canvasRun.cancelError}</p> : null}
+            </Card>
           ) : (
-            <Alert variant="warning" surface="glass" controlAlignment="first-line">
+            <Alert variant="warning" surface="glass" controlAlignment="first-line" className="text-xs">
               <Icon icon={icons.warning} />
-              <AlertTitle>Update your Canvas courses?</AlertTitle>
-              <AlertDescription>{updated ? `Last updated ${whenText(updated, now)}` : "Some courses have no recorded update time."}</AlertDescription>
+              <AlertTitle>Update Canvas?</AlertTitle>
+              <AlertDescription>
+                {updated ? `Last updated ${whenText(updated, now)}` : "Update time unknown"}
+                <Button size="xs" variant="outline" className="self-start" onClick={update}>Update</Button>
+              </AlertDescription>
               <AlertAction>
-                <Button size="xs" variant="outline" onClick={update}>Update</Button>
                 <Button size="icon-xs" variant="ghost-muted" aria-label="Dismiss Canvas reminder" onClick={() => setDismissedAt(Date.now())}>
                   <Icon icon={icons.close} />
                 </Button>
               </AlertAction>
             </Alert>
           )}
-        </div>
+        </aside>
       ) : null}
       <ConnectDialog open={!!again} again={again} onOpenChange={(o) => !o && setAgain(null)} onConnected={() => useCourses.getState().dismissRun()} />
     </>

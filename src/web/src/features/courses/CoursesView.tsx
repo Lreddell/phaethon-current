@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { SpaceView } from "@/app/api";
-import { ActionLabel, Header } from "@/app/Header";
+import { Header } from "@/app/Header";
 import { SurfaceError } from "@/components/errors";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
@@ -16,12 +16,13 @@ import { ArtEmpty } from "./components/ArtEmpty";
 import { CourseDetail } from "./components/CourseDetail";
 import { CourseTree, type SiteGroup } from "./components/CourseTree";
 import { ConnectDialog } from "./components/ConnectDialog";
+import { DeleteCourseDialog } from "./components/DeleteCourseDialog";
 import { DisconnectDialog } from "./components/DisconnectDialog";
 import { ImportDialog } from "./components/ImportDialog";
 import { ImportRun } from "./components/ImportRun";
 import { byShortName } from "./lib/course-name";
 import { plural } from "./lib/sites";
-import type { LmsConnection } from "./lib/types";
+import type { CourseInfo, LmsConnection } from "./lib/types";
 import { partsOf, useCourses } from "./store";
 
 /**
@@ -52,6 +53,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
   const [reopenImport, setReopenImport] = useState(false);
   const [importing, setImporting] = useState<LmsConnection | null>(null);
   const [disconnecting, setDisconnecting] = useState<LmsConnection | null>(null);
+  const [deleting, setDeleting] = useState<CourseInfo | null>(null);
   const loading = (connections.loading && !connections.data) || (access.loading && !access.data);
   const showSkeleton = useDelayed(loading);
 
@@ -87,7 +89,12 @@ export function CoursesView({ space }: { space: SpaceView }) {
   const hasAny = (connections.data?.length ?? 0) > 0 || courses.length > 0;
   const error = connections.error ?? access.error;
   const busy = run?.status === "running";
-  const canUpdate = groups.some((group) => group.connection && group.courses.length);
+  const canUpdate = groups.some((group) => group.connection?.signedIn && group.courses.length);
+  const updating = busy && !!run?.update;
+  const update = () => {
+    setListUp(false);
+    startUpdate(space.id, courses);
+  };
 
   const actions = {
     onImport: (c: LmsConnection) => setImporting(c),
@@ -98,17 +105,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <Header actions={canUpdate ? (
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => startUpdate(space.id, courses)}>
-          {busy && run.update ? <Spinner size="sm" /> : <Icon icon={icons.reload} />}
-          <ActionLabel>{busy && run.update ? "Updating…" : "Update courses"}</ActionLabel>
-        </Button>
-      ) : null} />
-      {run?.update ? (
-        <div className="mx-auto w-full max-w-(--page-max-width) shrink-0 px-6 pt-4">
-          <ImportRun run={run} onSignInAgain={signInForRun} compact />
-        </div>
-      ) : null}
+      <Header />
       {loading ? (
         showSkeleton ? <CoursesSkeleton /> : null
       ) : error && !hasAny ? (
@@ -117,7 +114,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
         </div>
       ) : !hasAny ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-8 pt-10">
-          {run && !run.update ? (
+          {run ? (
             <div className="mx-auto max-w-(--page-max-width)">
               <ImportRun run={run} onSignInAgain={signInForRun} />
             </div>
@@ -134,6 +131,14 @@ export function CoursesView({ space }: { space: SpaceView }) {
             <div className="flex shrink-0 flex-col gap-(--pane-row-gap) px-2 pt-(--pane-top) pb-2">
               <div className="flex h-(--pane-row-height) items-center gap-2 pl-2">
                 <h2 className="flex-1 type-title">Courses</h2>
+                {narrow && canUpdate ? (
+                  <Tooltip>
+                    <TooltipTrigger render={<Button size="icon-sm" variant="ghost-muted" aria-label="Update courses" disabled={busy} onClick={update} />}>
+                      {updating ? <Spinner size="sm" /> : <Icon icon={icons.reload} />}
+                    </TooltipTrigger>
+                    <TooltipPopup>Update courses</TooltipPopup>
+                  </Tooltip>
+                ) : null}
                 <Tooltip>
                   <TooltipTrigger render={<Button size="icon-sm" variant="ghost-muted" aria-label="Connect a course site" onClick={() => setConnect(true)} />}>
                     <Icon icon={icons.add} />
@@ -179,12 +184,15 @@ export function CoursesView({ space }: { space: SpaceView }) {
                 pane={listShown}
                 onPane={() => (narrow ? setListUp((u) => !u) : setPane((p) => !p))}
                 connection={connections.data?.find((c) => c.id === open.connection) ?? null}
-                run={run && !run.update ? <ImportRun run={run} onSignInAgain={signInForRun} /> : null}
+                run={run ? <ImportRun run={run} onSignInAgain={signInForRun} /> : null}
+                onUpdate={canUpdate ? update : undefined}
+                updating={updating}
+                onDelete={() => setDeleting(open)}
                 {...actions}
               />
             ) : (
               <div className="page-scroll flex min-h-0 flex-1 flex-col px-8 pt-10">
-                {run && !run.update ? (
+                {run ? (
                   <div className="mx-auto max-w-(--page-max-width)">
                     <ImportRun run={run} onSignInAgain={signInForRun} />
                   </div>
@@ -208,6 +216,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
       }} />
       <ImportDialog connection={importing} space={space.id} onOpenChange={(o) => !o && setImporting(null)} onSignInAgain={signInAgain} />
       <DisconnectDialog connection={disconnecting} onOpenChange={(o) => !o && setDisconnecting(null)} />
+      {deleting ? <DeleteCourseDialog course={deleting} onClose={() => setDeleting(null)} /> : null}
     </div>
   );
 }
