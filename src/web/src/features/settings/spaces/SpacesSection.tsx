@@ -521,7 +521,7 @@ function SpaceDetail({ space, spaces, onBack }: { space: SpaceView; spaces: Spac
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title={`Delete ${space.name}?`}
-        confirm="Delete space"
+        confirm="Delete"
         destructive
         onConfirm={() => void remove()}
       >
