@@ -21,31 +21,40 @@ function fraction(c: CourseRun): number {
   return base + span * at;
 }
 
-/** The running (or just finished) import: a 2 px bar on top, one row per course. */
-export function ImportRun({ run, onSignInAgain, compact = false }: { run: Run; onSignInAgain: () => void; compact?: boolean }) {
+export function CourseProgress({ run, className, decorative = false }: { run: Run; className?: string; decorative?: boolean }) {
+  const running = run.status === "running";
+  const overall = run.courses.reduce((n, c) => n + fraction(c), 0) / Math.max(run.courses.length, 1);
+  return (
+    <span
+      className={cn("block h-0.5 bg-muted", className)}
+      aria-hidden={decorative || undefined}
+      role={running && !decorative ? "progressbar" : undefined}
+      aria-label={running && !decorative ? (run.update ? "Course update progress" : "Course import progress") : undefined}
+      aria-valuenow={running && !decorative ? Math.floor(overall * 100) : undefined}
+    >
+      <span
+        className={cn("block h-full transition-[width] duration-300 ease-out", run.status === "failed" ? "bg-error" : run.status === "running" ? "bg-primary" : "bg-success")}
+        style={{ width: `${(running ? overall : 1) * 100}%` }}
+      />
+    </span>
+  );
+}
+
+/** The running (or just finished) import or update: one row per course. */
+export function ImportRun({ run, onSignInAgain }: { run: Run; onSignInAgain: () => void }) {
   const cancel = useCourses((s) => s.cancelImport);
   const dismiss = useCourses((s) => s.dismissRun);
   const running = run.status === "running";
   const finished = run.courses.filter((c) => c.result || c.failed).length;
-  const overall = run.courses.reduce((n, c) => n + fraction(c), 0) / Math.max(run.courses.length, 1);
-
+  const verb = run.update ? "Updating" : "Importing";
+  const progressTitle = run.school ? `${verb} from ${run.school}` : `${verb} courses…`;
   return (
     <div className="relative overflow-hidden rounded-card border bg-card" data-testid="import-run">
-      <div
-        className="absolute inset-x-0 top-0 h-0.5 bg-muted"
-        role={running ? "progressbar" : undefined}
-        aria-label={running ? (run.update ? "Course update progress" : "Course import progress") : undefined}
-        aria-valuenow={running ? Math.floor(overall * 100) : undefined}
-      >
-        <div
-          className={cn("h-full transition-[width] duration-300 ease-out", run.status === "failed" ? "bg-error" : run.status === "running" ? "bg-primary" : "bg-success")}
-          style={{ width: `${(running ? overall : 1) * 100}%` }}
-        />
-      </div>
+      <CourseProgress run={run} className="absolute inset-x-0 top-0" />
       <div className="flex h-12 items-center gap-2 px-5 pt-0.5">
         <div className="min-w-0 flex-1 text-sm">
           {running ? (
-            <Truncate className="font-medium">{run.cancelling ? "Stopping…" : run.update ? "Updating courses…" : `Importing from ${run.school}`}</Truncate>
+            <Truncate className="font-medium">{run.cancelling ? `Stopping the ${run.update ? "update" : "import"}…` : progressTitle}</Truncate>
           ) : (
             <Truncate className="font-medium">{run.signInConnection && !run.update ? "Signed out partway through" : endText(run)}</Truncate>
           )}
@@ -76,7 +85,7 @@ export function ImportRun({ run, onSignInAgain, compact = false }: { run: Run; o
           )}
         </div>
       ) : null}
-      <ul className={cn("border-t py-1.5", compact && "max-h-32 overflow-y-auto")}>
+      <ul className="border-t py-1.5">
         {run.courses.map((c) => (
           <CourseRow key={c.id} c={c} update={run.update} />
         ))}

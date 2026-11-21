@@ -172,7 +172,7 @@ export function ChatView({ space }: { space: SpaceView }) {
   });
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="@container/chat relative flex min-h-0 flex-1 flex-col">
       <ChatCourseUpdate space={space} title={title}>
         <HeaderActions space={space} thread={thread} />
       </ChatCourseUpdate>

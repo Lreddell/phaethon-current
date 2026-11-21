@@ -1,9 +1,11 @@
 import fs from "node:fs";
+import path from "node:path";
+import { deleteItem } from "../files/manage.ts";
 import { keychainDelete, keychainGet, keychainSet, lmsVaultAccount } from "../core/secrets.ts";
 import { spaceDir, vaultRoot } from "../core/vault.ts";
 import { Refusal } from "../rpc/registry.ts";
 import type { Channel } from "../rpc/channel.ts";
-import { allowAll, can, courseKey, visible, type Visible } from "./access.ts";
+import { allowAll, can, courseKey, forget, visible, type Visible } from "./access.ts";
 import { account, accountFingerprint, content as readContent, courses as readCourses, grades as readGrades } from "./adapters/index.ts";
 import { sha256Hex } from "./hash.ts";
 import { request } from "./http.ts";
@@ -14,6 +16,7 @@ import { Session } from "./session.ts";
 import {
   COURSES_DIR,
   courseDir,
+  folders,
   getConn,
   load,
   loadAccounts,
@@ -22,6 +25,7 @@ import {
   putGrades,
   save,
   saveAccounts,
+  saveGrades,
   update,
   type Accounts,
   type Conn,
@@ -498,6 +502,8 @@ export async function refreshGradesWith(s: Session, id: string, allowed: (cid: s
       emit({ type: "error", message: `${cs.name}: ${msg(e)}` });
       continue;
     }
+    const course = getConn(load(root), id)?.courses[cid];
+    if (!course || course.lastSync !== cs.lastSync || course.folder !== cs.folder) continue;
     const dir = courseDir(root, cs.folder);
     if (dir) {
       try {
@@ -509,6 +515,41 @@ export async function refreshGradesWith(s: Session, id: string, allowed: (cid: s
     const rec = gradeRec(id, cid, cs.name, cs.folder, g);
     putGrades(root, rec);
     emit({ type: "course", course: cid, grades: rec });
+  }
+}
+
+/** Remove an imported course from the vault and from every space that sees it. */
+export async function deleteCourse(connection: string, courseId: string): Promise<void> {
+  const root = vaultRoot();
+  if (importing.has(root)) throw new Refusal("Wait for the course import or update to finish.");
+  importing.add(root);
+  try {
+    const store = load(root);
+    const conn = getConn(store, connection);
+    if (!conn || !Object.hasOwn(conn.courses, courseId)) return;
+    const { folder } = conn.courses[courseId]!;
+    const key = courseKey(connection, courseId);
+    const dir = courseDir(root, folder);
+    // A migrated vault can have two records for one folder. Keep files still
+    // used by the other course. Missing folders can still be removed from the list.
+    if (dir && folders(store).filter((f) => f.toLowerCase() === folder.toLowerCase()).length === 1) {
+      await deleteItem(root, path.relative(root, dir));
+    }
+    const book = loadGrades(root);
+    if (Object.hasOwn(book.courses, key)) {
+      delete book.courses[key];
+      saveGrades(root, book);
+    }
+    forget([key]);
+    update(root, (s) => {
+      const current = getConn(s, connection);
+      if (!current) return;
+      delete current.courses[courseId];
+      const times = Object.values(current.courses).flatMap((c) => c.lastSync === undefined ? [] : [c.lastSync]);
+      current.lastSync = times.length ? Math.max(...times) : undefined;
+    });
+  } finally {
+    importing.delete(root);
   }
 }
 

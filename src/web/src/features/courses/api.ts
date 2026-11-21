@@ -26,6 +26,8 @@ export const lmsDisconnect = (connection: string) => invoke<void>("lms_disconnec
 export const courseAccessGet = (space?: string) => invoke<CourseAccessView>("course_access_get", space ? { space } : {});
 export const courseAccessSet = (space: string, course: string, parts: CoursePart[]) => invoke<void>("course_access_set", { space, course, parts });
 export const lmsCourseContent = (space: string, course: string) => invoke<CourseContent>("lms_course_content", { space, course });
+export const lmsCourseCanTrash = () => invoke<boolean>("lms_course_can_trash", {});
+export const lmsCourseDelete = (connection: string, courseId: string) => invoke<void>("lms_course_delete", { connection, courseId });
 export const spacesList = () => invoke<SpaceSummary[]>("spaces_list");
 
 /** Import the chosen courses; ends on the stream's terminal event (see lib/stream.ts). */
