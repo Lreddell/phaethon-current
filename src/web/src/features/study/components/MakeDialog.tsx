@@ -99,6 +99,7 @@ export function MakeDialog({
 }) {
   const [draft, setDraft] = useState<MakeDraft>(() => given ?? emptyDraft(kind));
   const [phase, setPhase] = useState<Phase>("what");
+  const panel = useRef<HTMLDivElement>(null);
   const [dir, setDir] = useState<1 | -1>(1);
   const [errs, setErrs] = useState<{ exam?: string; covers?: string; count?: string; kinds?: string; course?: string }>({});
   const [editScope, setEditScope] = useState(false);
@@ -112,6 +113,11 @@ export function MakeDialog({
   const quiz = draft.kind === "quiz";
   const noun = quiz ? "question" : "card";
   const patch = (p: Partial<MakeDraft>) => setDraft((d) => ({ ...d, ...p }));
+
+  // A new step starts with its first controls, even after scrolling through a long source list.
+  useEffect(() => {
+    panel.current?.closest<HTMLElement>('[data-slot="scroll-area-viewport"]')?.scrollTo({ top: 0 });
+  }, [phase]);
 
   // A fresh flow each time it opens; a draft from chat starts at its second step; a run under way shows where it is.
   useEffect(() => {
@@ -263,7 +269,7 @@ export function MakeDialog({
             </div>
           </DialogHeader>
 
-          <DialogPanel scrollAreaClassName="flex flex-col [&>[data-slot=scroll-area-viewport]]:min-h-0" className="space-y-0 px-6 pt-1 pb-2">
+          <DialogPanel ref={panel} scrollAreaClassName="flex flex-col [&>[data-slot=scroll-area-viewport]]:min-h-0" className="space-y-0 px-6 pt-1 pb-2">
             <Slide id={phase} dir={dir}>
               {phase === "what" ? (
                 <WhatStep
