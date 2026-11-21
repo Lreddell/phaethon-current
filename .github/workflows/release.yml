@@ -2,7 +2,7 @@
 # and deb, x64) and uploads the installers and the updater's latest*.yml files
 # to a draft GitHub release for the tag. Publishing the draft is what makes it
 # the update everyone gets: electron-updater reads the latest published release
-# of jerynv/phaethon, never a draft or a prerelease.
+# of Lreddell/phaethon-current, never a draft or a prerelease.
 #
 # macOS signing and notarization (repository secrets):
 # APPLE_CERTIFICATE (base64 .p12 of the team's Developer ID Application
@@ -20,7 +20,7 @@
 #
 # Phaethon 0.1.x (Tauri) installs read latest.json and can't update to these
 # builds; they need one manual install.
-name: release
+name: personal release
 
 on:
   workflow_dispatch:
@@ -30,8 +30,18 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: personal-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   draft:
+    needs: verify
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -57,12 +67,8 @@ jobs:
         shell: bash
         run: |
           if ! gh release view "v$VERSION" >/dev/null 2>&1; then
-            gh release create "v$VERSION" --draft --title "Phaethon $VERSION" --target "$GITHUB_SHA" --notes \
-              "Pre-alpha desktop build. Phaethon is still in development and is not ready for real data.
-
-          Download the installer for your operating system from the assets below. Future releases can update from inside the app.
-
-          Phaethon 0.1.x can't update itself to this version: download and install it once by hand."
+            gh release create "v$VERSION" --draft --title "Phaethon $VERSION - personal build" --target "$GITHUB_SHA" \
+              --notes-file docs/personal-release-notes.md
           fi
 
   build:
@@ -151,3 +157,34 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm exec electron-builder ${{ matrix.target }} ${{ env.MAC_SIGN_ARGS }} --publish always
+
+  publish:
+    needs: [draft, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify downloads, add checksums and publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.draft.outputs.version }}
+        run: |
+          assets="$RUNNER_TEMP/release-assets"
+          mkdir -p "$assets"
+          gh release download "v$VERSION" --dir "$assets"
+          cd "$assets"
+          for asset in \
+            "Phaethon-$VERSION-win-x64.exe" \
+            "Phaethon-$VERSION-mac-arm64.dmg" \
+            "Phaethon-$VERSION-mac-x64.dmg" \
+            "Phaethon-$VERSION-mac-arm64.zip" \
+            "Phaethon-$VERSION-mac-x64.zip" \
+            "Phaethon-$VERSION-linux-x64.AppImage" \
+            "Phaethon-$VERSION-linux-x64.deb" \
+            latest.yml latest-mac.yml latest-linux.yml; do
+            test -s "$asset" || { echo "Missing or empty release asset: $asset" >&2; exit 1; }
+          done
+          find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\0' | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
+          gh release upload "v$VERSION" SHA256SUMS.txt --clobber
+          gh release edit "v$VERSION" --draft=false --prerelease=false --latest

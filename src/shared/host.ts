@@ -103,7 +103,7 @@ export type TrayAction =
  * Where updates come from: the project's GitHub releases. electron-builder.yml
  * `publish` names the same repository (a test checks they agree).
  */
-export const UPDATE_FEED = { provider: "github", owner: "jerynv", repo: "phaethon" } as const;
+export const UPDATE_FEED = { provider: "github", owner: "Lreddell", repo: "phaethon-current" } as const;
 
 /** An update error as electron-updater raised it; the core puts it in words. */
 export type UpdateError = { message: string; code?: string; statusCode?: number };

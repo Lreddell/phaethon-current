@@ -1,3 +1,5 @@
+> **Logan's personal build:** [Download installers](https://github.com/Lreddell/phaethon-current/releases). The `personal` branch combines PRs #23 through #26. See [PERSONAL_BUILD.md](PERSONAL_BUILD.md) for downloads and release instructions. Upstream: [jerynv/phaethon](https://github.com/jerynv/phaethon).
+
 <h1 align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/brand/banner-dark.png">

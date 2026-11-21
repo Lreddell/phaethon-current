@@ -51,7 +51,7 @@ afterEach(() => setHost(noHost));
 
 describe("setup", () => {
   it("is set up only with a named repository or an https feed", () => {
-    expect(setupOf(UPDATE_FEED)).toEqual({ ready: true, source: "jerynv/phaethon" });
+    expect(setupOf(UPDATE_FEED)).toEqual({ ready: true, source: "Lreddell/phaethon-current" });
     expect(setupOf({ provider: "generic", url: "https://updates.example.org/{{channel}}" })).toEqual({ ready: true, source: "updates.example.org" });
     for (const [feed, why] of [
       [null, "nothing set"],
@@ -127,7 +127,7 @@ describe("commands", () => {
     setHost(fake);
     expect((await call<{ status: unknown; source: string }>("update_state")).status).toEqual({ state: "idle" });
     const v = await call<{ status: unknown; source: string }>("update_check");
-    expect(v.source).toBe("jerynv/phaethon");
+    expect(v.source).toBe("Lreddell/phaethon-current");
     expect(v.status).toEqual({ state: "available", version: "0.3.0", notes: "Faster", date: "2026-11-01" });
     expect(fake.ops).toEqual([{ op: "updateCheck" }]);
   });

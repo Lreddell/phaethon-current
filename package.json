@@ -2,11 +2,11 @@
   "name": "phaethon",
   "productName": "Phaethon",
   "private": true,
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "An accessible, desktop-first AI agent workspace.",
   "license": "MIT",
   "author": "Jeryn Vicari",
-  "homepage": "https://github.com/jerynv/phaethon",
+  "homepage": "https://github.com/Lreddell/phaethon-current",
   "type": "module",
   "main": "dist/desktop/main.cjs",
   "imports": {

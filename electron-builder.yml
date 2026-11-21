@@ -95,6 +95,6 @@ deb:
 
 publish:
   provider: github
-  owner: jerynv
-  repo: phaethon
+  owner: Lreddell
+  repo: phaethon-current
   releaseType: draft
