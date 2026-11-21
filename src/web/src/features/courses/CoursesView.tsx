@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import type { SpaceView } from "@/app/api";
-import { Header } from "@/app/Header";
+import { ActionLabel, Header } from "@/app/Header";
 import { SurfaceError } from "@/components/errors";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { SearchField, SearchFieldAction } from "@/components/ui/search-field";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { useDelayed } from "@/hooks/use-delayed";
 import { useNarrow } from "@/hooks/use-narrow";
@@ -39,6 +40,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
   const connections = useCourses((s) => s.connections);
   const access = useCourses((s) => s.access);
   const run = useCourses((s) => s.run);
+  const startUpdate = useCourses((s) => s.startUpdate);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [pane, setPane] = useState(true);
@@ -47,6 +49,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
   const [bodyRef, narrow] = useNarrow<HTMLDivElement>(SPLIT_MIN_WIDTH);
   const [connect, setConnect] = useState(false);
   const [again, setAgain] = useState<LmsConnection | null>(null);
+  const [reopenImport, setReopenImport] = useState(false);
   const [importing, setImporting] = useState<LmsConnection | null>(null);
   const [disconnecting, setDisconnecting] = useState<LmsConnection | null>(null);
   const loading = (connections.loading && !connections.data) || (access.loading && !access.data);
@@ -74,14 +77,17 @@ export function CoursesView({ space }: { space: SpaceView }) {
     setListUp(false);
   };
 
-  const signInAgain = (c: LmsConnection) => {
+  const signInAgain = (c: LmsConnection, openImport = true) => {
     setImporting(null);
+    setReopenImport(openImport);
     setAgain(c);
   };
-  const runConnection = run ? connections.data?.find((c) => c.id === run.connection) : undefined;
+  const runConnection = connections.data?.find((c) => c.id === run?.signInConnection);
+  const signInForRun = () => runConnection && signInAgain(runConnection, !run?.update);
   const hasAny = (connections.data?.length ?? 0) > 0 || courses.length > 0;
   const error = connections.error ?? access.error;
   const busy = run?.status === "running";
+  const canUpdate = groups.some((group) => group.connection && group.courses.length);
 
   const actions = {
     onImport: (c: LmsConnection) => setImporting(c),
@@ -92,7 +98,17 @@ export function CoursesView({ space }: { space: SpaceView }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <Header />
+      <Header actions={canUpdate ? (
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => startUpdate(space.id, courses)}>
+          {busy && run.update ? <Spinner size="sm" /> : <Icon icon={icons.reload} />}
+          <ActionLabel>{busy && run.update ? "Updating…" : "Update courses"}</ActionLabel>
+        </Button>
+      ) : null} />
+      {run?.update ? (
+        <div className="mx-auto w-full max-w-(--page-max-width) shrink-0 px-6 pt-4">
+          <ImportRun run={run} onSignInAgain={signInForRun} compact />
+        </div>
+      ) : null}
       {loading ? (
         showSkeleton ? <CoursesSkeleton /> : null
       ) : error && !hasAny ? (
@@ -101,9 +117,9 @@ export function CoursesView({ space }: { space: SpaceView }) {
         </div>
       ) : !hasAny ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-8 pt-10">
-          {run ? (
+          {run && !run.update ? (
             <div className="mx-auto max-w-(--page-max-width)">
-              <ImportRun run={run} onSignInAgain={() => runConnection && signInAgain(runConnection)} />
+              <ImportRun run={run} onSignInAgain={signInForRun} />
             </div>
           ) : null}
           <ArtEmpty palette="sky" seed="courses-empty" title="No course sites" description="Connect Canvas, Brightspace, Moodle or Blackboard to import your courses.">
@@ -163,14 +179,14 @@ export function CoursesView({ space }: { space: SpaceView }) {
                 pane={listShown}
                 onPane={() => (narrow ? setListUp((u) => !u) : setPane((p) => !p))}
                 connection={connections.data?.find((c) => c.id === open.connection) ?? null}
-                run={run ? <ImportRun run={run} onSignInAgain={() => runConnection && signInAgain(runConnection)} /> : null}
+                run={run && !run.update ? <ImportRun run={run} onSignInAgain={signInForRun} /> : null}
                 {...actions}
               />
             ) : (
               <div className="page-scroll flex min-h-0 flex-1 flex-col px-8 pt-10">
-                {run ? (
+                {run && !run.update ? (
                   <div className="mx-auto max-w-(--page-max-width)">
-                    <ImportRun run={run} onSignInAgain={() => runConnection && signInAgain(runConnection)} />
+                    <ImportRun run={run} onSignInAgain={signInForRun} />
                   </div>
                 ) : null}
                 <ArtEmpty palette="sky" seed="courses-none" title="No courses yet" description="Import courses from a connected site to browse their files here.">
@@ -186,7 +202,10 @@ export function CoursesView({ space }: { space: SpaceView }) {
           </div>
         </div>
       )}
-      <ConnectDialog open={connect || !!again} again={again} onOpenChange={(o) => (o ? undefined : (setConnect(false), setAgain(null)))} onConnected={(c) => setImporting(c)} />
+      <ConnectDialog open={connect || !!again} again={again} onOpenChange={(o) => (o ? undefined : (setConnect(false), setAgain(null)))} onConnected={(c) => {
+        if (!again || reopenImport) setImporting(c);
+        else useCourses.getState().dismissRun();
+      }} />
       <ImportDialog connection={importing} space={space.id} onOpenChange={(o) => !o && setImporting(null)} onSignInAgain={signInAgain} />
       <DisconnectDialog connection={disconnecting} onOpenChange={(o) => !o && setDisconnecting(null)} />
     </div>

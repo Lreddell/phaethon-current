@@ -2,7 +2,7 @@ import { AnimatePresence } from "motion/react";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { api, type SpaceView } from "@/app/api";
-import { Header, useViewActive } from "@/app/Header";
+import { useViewActive } from "@/app/Header";
 import { chatKey, DRAFT, NO_SPACES, useNav, useOpenThread } from "@/app/store";
 import { SurfaceError } from "@/components/errors";
 import { BrandMark } from "@/components/brand-mark";
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { SkeletonTurns } from "@/components/skeletons";
 import { toast } from "@/components/toast";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
+import { ChatCourseUpdate } from "@/features/courses/components/ChatCourseUpdate";
 import { useDelayed } from "@/hooks/use-delayed";
 import { errorText } from "@/lib/core";
 import { cn } from "@/lib/utils";
@@ -172,7 +173,9 @@ export function ChatView({ space }: { space: SpaceView }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <Header title={title} actions={<HeaderActions space={space} thread={thread} />} />
+      <ChatCourseUpdate space={space} title={title}>
+        <HeaderActions space={space} thread={thread} />
+      </ChatCourseUpdate>
       {/* One composer per conversation, keyed by it, so each keeps its own draft, files and edit. */}
       {failed ? (
         <div className="mx-auto w-full max-w-(--chat-max-width) flex-1 px-4 pt-8">

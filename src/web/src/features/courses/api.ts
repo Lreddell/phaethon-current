@@ -29,11 +29,11 @@ export const lmsCourseContent = (space: string, course: string) => invoke<Course
 export const spacesList = () => invoke<SpaceSummary[]>("spaces_list");
 
 /** Import the chosen courses; ends on the stream's terminal event (see lib/stream.ts). */
-export function lmsImport(connection: string, courseIds: string[], spaces: string[], onEvent: (e: LmsImportEvent) => void): Promise<StreamEnd> {
+export function lmsImport(connection: string, courseIds: string[], spaces: string[], onEvent: (e: LmsImportEvent) => void, update = false): Promise<StreamEnd> {
   return untilTerminal<LmsImportEvent>(
     (on) => {
       const channel = new Channel<LmsImportEvent>(on);
-      return invoke<void>("lms_import", { connection, courseIds, spaces, onEvent: channel });
+      return invoke<void>("lms_import", { connection, courseIds, spaces, update, onEvent: channel });
     },
     onEvent,
     (e) => e.type === "done" || e.type === "cancelled",
