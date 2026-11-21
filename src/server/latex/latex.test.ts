@@ -1,4 +1,4 @@
-import { symlink } from "../../../tests/fs.ts";
+import { canSymlinkFiles, symlink } from "../../../tests/fs.ts";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -282,9 +282,11 @@ describe("save", () => {
     const space2 = tmp("save-style-link");
     const outside = path.join(tmp("save-style-out"), "x.sty");
     fs.mkdirSync(path.join(space2, "documents"));
-    symlink(outside, path.join(space2, "documents", STYLE_FILE));
-    expect(save(space2, doc, null, "Notes", false).tex).toBe("documents/notes.tex");
-    expect(fs.existsSync(outside)).toBe(false);
+    if (canSymlinkFiles) {
+      symlink(outside, path.join(space2, "documents", STYLE_FILE));
+      expect(save(space2, doc, null, "Notes", false).tex).toBe("documents/notes.tex");
+      expect(fs.existsSync(outside)).toBe(false);
+    }
     for (const d of [space, space2, path.dirname(outside)]) fs.rmSync(d, { recursive: true });
   });
 
