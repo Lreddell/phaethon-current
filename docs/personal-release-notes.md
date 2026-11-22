@@ -8,9 +8,7 @@ Logan's combined Phaethon build, based on upstream main with PRs #23, #24, #25 a
 - Fix the clipped source list, normal scrolling and step positioning using the existing Study UI.
 - Run Mac CI walkthroughs individually so parallel browsers do not interfere with the sidebar performance check. Existing tests and timing limits are preserved.
 
-Download the Windows x64 `.exe`, the Mac `.dmg` for Apple Silicon (`arm64`) or Intel (`x64`), or a Linux x64 AppImage/deb. The Mac `.zip` files and `latest*.yml` files are updater assets. `SHA256SUMS.txt` contains checksums.
-
-Mac builds without configured Apple Developer ID credentials are ad-hoc signed and not notarized. They may require macOS confirmation on first launch and manual installation of later releases. Windows builds are unsigned unless signing is configured.
+Download `Phaethon-0.3.4-win-x64.exe` for a 64-bit Windows PC or laptop. `latest.yml` and the `.blockmap` support updates; `SHA256SUMS.txt` contains checksums. This is a Windows-only release. The installer is unsigned.
 
 The app checks this fork for updates. Application downloads do not contain your local vault or account sessions; sign into your accounts on each device.
 

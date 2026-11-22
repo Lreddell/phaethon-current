@@ -8,18 +8,9 @@ The default `personal` branch contains the combined version. The upstream PR bra
 
 Open [Releases](https://github.com/Lreddell/phaethon-current/releases) and expand the release's Assets list.
 
-| Device | Download |
-| --- | --- |
-| Windows PC or laptop, Intel/AMD 64-bit | `Phaethon-<version>-win-x64.exe` |
-| Mac with Apple Silicon, including M-series chips | `Phaethon-<version>-mac-arm64.dmg` |
-| Mac with an Intel processor | `Phaethon-<version>-mac-x64.dmg` |
-| Linux, Intel/AMD 64-bit | `Phaethon-<version>-linux-x64.AppImage` or `.deb` |
+Download `Phaethon-<version>-win-x64.exe` for a 64-bit Windows PC or laptop. Windows installers are unsigned unless a signing certificate is configured.
 
-Windows installers are unsigned unless a signing certificate is configured. Mac builds use ad-hoc signing when this fork has no Apple Developer ID credentials; those builds are not notarized and may require macOS confirmation on first launch. Install subsequent ad-hoc Mac builds manually. Upstream's signing credentials are not available to this fork.
-
-Each release contains `SHA256SUMS.txt` for checking downloaded files. The app uses this fork's update feed, so it keeps the personal release channel. Your vault, conversations and signed-in accounts are local data and are not included in these application downloads. Configure your accounts on each device.
-
-Linux releases also retain the packagers' `x86_64.AppImage` and `amd64.deb` filenames for update manifests. Their `x64` aliases contain identical bytes.
+Releases include the installer, its updater blockmap, `latest.yml`, and `SHA256SUMS.txt`. The app uses this fork's update feed. Your vault, conversations and account sessions are not included in application downloads; configure accounts on each device.
 
 ## Included changes
 
@@ -34,7 +25,7 @@ Linux releases also retain the packagers' `x86_64.AppImage` and `amd64.deb` file
 
 1. Commit changes to `personal` and increase `package.json`'s version to an unused version.
 2. Open this fork's **Actions > personal release > Run workflow**, using `personal`. Alternatively, push a `v<version>` tag pointing to the release commit.
-3. The workflow runs the existing Windows/macOS/Linux suite with Node 22 and 24, then creates a draft and packages all platforms.
+3. The workflow runs the existing Windows suite with Node 22 and 24, then creates a draft and packages the Windows installer.
 4. Once every build succeeds, it verifies the expected downloads, uploads checksums and publishes the release. A failed check or package leaves the release unpublished.
 
 The workflow uses this repository's scoped `GITHUB_TOKEN`; no personal access token is built into the app. Optional signing credentials can be added as repository Actions secrets using the names documented in `.github/workflows/release.yml`.

@@ -1,168 +1,64 @@
-# Builds Phaethon for macOS (arm64 and x64), Windows (x64) and Linux (AppImage
-# and deb, x64) and uploads the installers and the updater's latest*.yml files
-# to a draft GitHub release for the tag. Publishing the draft is what makes it
-# the update everyone gets: electron-updater reads the latest published release
-# of Lreddell/phaethon-current, never a draft or a prerelease.
-#
-# macOS signing and notarization (repository secrets):
-# APPLE_CERTIFICATE (base64 .p12 of the team's Developer ID Application
-# certificate and its key) and APPLE_CERTIFICATE_PASSWORD sign the app.
-# Notarization uses an App Store Connect API key: APPLE_API_KEY (the .p8's
-# text), APPLE_API_KEY_ID and APPLE_API_ISSUER; or, as before, APPLE_ID,
-# APPLE_PASSWORD (an app-specific password) and APPLE_TEAM_ID. Signed and
-# notarized, the app opens from a download with no Gatekeeper prompt and
-# updates in place. Without a certificate the macOS build is signed ad hoc:
-# Gatekeeper warns on first open, and macOS can't install updates in place.
-# Ad hoc signing is required, not optional: flipping the fuses rewrites Electron
-# Framework, and Apple Silicon kills a binary whose code no longer matches its
-# signature. Ad hoc builds turn hardened runtime off, because its library
-# validation rejects frameworks that don't share a Team ID.
-#
-# Phaethon 0.1.x (Tauri) installs read latest.json and can't update to these
-# builds; they need one manual install.
 name: personal release
-
 on:
   workflow_dispatch:
   push:
     tags: ["v*"]
-
 permissions:
   contents: write
-
 concurrency:
   group: personal-release-${{ github.ref }}
   cancel-in-progress: false
-
 jobs:
   verify:
     uses: ./.github/workflows/ci.yml
+    with:
+      platforms: '["windows-latest"]'
     permissions:
       contents: read
-
   draft:
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
-
-      - name: The tag matches package.json
+      - name: Check the release version
         id: version
         shell: bash
         run: |
           version="$(node -p 'require("./package.json").version')"
-          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
-            echo "Tag $GITHUB_REF_NAME doesn't match package.json version $version." >&2
-            exit 1
-          fi
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "v$version" ]]; then exit 1; fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      # One draft for every build to upload into, so parallel jobs don't each make their own.
-      - name: Draft release
+      - name: Create the Windows release draft
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
-        shell: bash
         run: |
           if ! gh release view "v$VERSION" >/dev/null 2>&1; then
-            gh release create "v$VERSION" --draft --title "Phaethon $VERSION - personal build" --target "$GITHUB_SHA" \
-              --notes-file docs/personal-release-notes.md
+            gh release create "v$VERSION" --draft --title "Phaethon $VERSION - Windows personal build" --target "$GITHUB_SHA" --notes-file docs/personal-release-notes.md
           fi
-
   build:
     needs: draft
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            target: --mac --arm64 --x64
-            # Both architectures' prebuilt native modules, for the x64 build on an arm64 runner.
-            install: pnpm install --frozen-lockfile --cpu=arm64 --cpu=x64
-          - os: windows-latest
-            target: --win --x64
-            install: pnpm install --frozen-lockfile
-          - os: ubuntu-latest
-            target: --linux --x64
-            install: pnpm install --frozen-lockfile
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-
       - uses: pnpm/action-setup@v6
-
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
-
-      - run: ${{ matrix.install }}
-
-      # The app icon is an Icon Composer bundle, which only actool 26+ compiles.
-      - name: Xcode 26 or later
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          xcode="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
-          sudo xcode-select -s "$xcode"
-          xcrun actool --version | grep -A1 short-bundle-version
-
-      - name: Apple signing when available
-        if: runner.os == 'macOS'
-        shell: bash
-        env:
-          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          API_KEY: ${{ secrets.APPLE_API_KEY }}
-          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_ACCOUNT: ${{ secrets.APPLE_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          put() {
-            local delimiter
-            delimiter="EOF_$(uuidgen)"
-            printf '%s<<%s\n%s\n%s\n' "$1" "$delimiter" "$2" "$delimiter" >> "$GITHUB_ENV"
-          }
-          if [[ -z "$CERTIFICATE" ]]; then
-            echo "No Apple certificate: the build is signed ad hoc."
-            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
-            echo "MAC_SIGN_ARGS=-c.mac.identity=- -c.mac.hardenedRuntime=false" >> "$GITHUB_ENV"
-            exit 0
-          fi
-          put CSC_LINK "$CERTIFICATE"
-          [[ -n "$CERTIFICATE_PASSWORD" ]] && put CSC_KEY_PASSWORD "$CERTIFICATE_PASSWORD"
-          if [[ -n "$API_KEY" && -n "$API_KEY_ID" && -n "$API_ISSUER" ]]; then
-            # notarytool reads the key from a file, outside the checkout.
-            key="$RUNNER_TEMP/AuthKey_$API_KEY_ID.p8"
-            printf '%s\n' "$API_KEY" > "$key"
-            chmod 600 "$key"
-            put APPLE_API_KEY "$key"
-            put APPLE_API_KEY_ID "$API_KEY_ID"
-            put APPLE_API_ISSUER "$API_ISSUER"
-          elif [[ -n "$APPLE_ACCOUNT" && -n "$APPLE_APP_PASSWORD" && -n "$TEAM_ID" ]]; then
-            put APPLE_ID "$APPLE_ACCOUNT"
-            put APPLE_APP_SPECIFIC_PASSWORD "$APPLE_APP_PASSWORD"
-            put APPLE_TEAM_ID "$TEAM_ID"
-          else
-            echo "No notarization credentials: the build is signed but not notarized."
-          fi
-
+      - run: pnpm install --frozen-lockfile
       - run: pnpm build
-
-      - name: Package and upload to the draft
+      - name: Package and upload the Windows installer
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm exec electron-builder ${{ matrix.target }} ${{ env.MAC_SIGN_ARGS }} --publish always
-
+        run: pnpm exec electron-builder --win --x64 --publish always
   publish:
     needs: [draft, build]
     runs-on: ubuntu-24.04
     steps:
-      - name: Verify downloads, add checksums and publish
+      - name: Verify Windows downloads and publish
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -173,32 +69,10 @@ jobs:
           mkdir -p "$assets"
           gh release download "v$VERSION" --dir "$assets"
           cd "$assets"
-          # Linux packagers use their native architecture labels. Keep those
-          # originals for update manifests and offer x64 aliases for downloads.
-          for extension in AppImage deb; do
-            alias="Phaethon-$VERSION-linux-x64.$extension"
-            if [[ ! -s "$alias" ]]; then
-              architecture=x86_64
-              [[ "$extension" == deb ]] && architecture=amd64
-              original="Phaethon-$VERSION-linux-$architecture.$extension"
-              test -s "$original"
-              cp "$original" "$alias"
-              cmp "$original" "$alias"
-              gh release upload "v$VERSION" "$alias" --clobber
-            fi
+          for asset in "Phaethon-$VERSION-win-x64.exe" "Phaethon-$VERSION-win-x64.exe.blockmap" latest.yml; do
+            test -s "$asset" || { echo "Missing or empty asset: $asset" >&2; exit 1; }
           done
-          for asset in \
-            "Phaethon-$VERSION-win-x64.exe" \
-            "Phaethon-$VERSION-mac-arm64.dmg" \
-            "Phaethon-$VERSION-mac-x64.dmg" \
-            "Phaethon-$VERSION-mac-arm64.zip" \
-            "Phaethon-$VERSION-mac-x64.zip" \
-            "Phaethon-$VERSION-linux-x64.AppImage" \
-            "Phaethon-$VERSION-linux-x64.deb" \
-            latest.yml latest-mac.yml latest-linux.yml; do
-            test -s "$asset" || { echo "Missing or empty release asset: $asset" >&2; exit 1; }
-          done
-          find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\0' | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          sha256sum "Phaethon-$VERSION-win-x64.exe" "Phaethon-$VERSION-win-x64.exe.blockmap" latest.yml > SHA256SUMS.txt
           sha256sum --check SHA256SUMS.txt
           gh release upload "v$VERSION" SHA256SUMS.txt --clobber
           gh release edit "v$VERSION" --draft=false --prerelease=false --latest
