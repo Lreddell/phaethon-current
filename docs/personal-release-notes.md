@@ -6,6 +6,7 @@ Logan's combined Phaethon build, based on upstream main with PRs #23, #24, #25 a
 - Make quizzes and flashcards with up to 100 items. Large sets are written in batches and each item is checked against the selected material.
 - Consider all readable imported course files, honor source selection, and include Pages and Announcements in the source picker.
 - Fix the clipped source list, normal scrolling and step positioning using the existing Study UI.
+- Run Mac CI walkthroughs individually so parallel browsers do not interfere with the sidebar performance check. Existing tests and timing limits are preserved.
 
 Download the Windows x64 `.exe`, the Mac `.dmg` for Apple Silicon (`arm64`) or Intel (`x64`), or a Linux x64 AppImage/deb. The Mac `.zip` files and `latest*.yml` files are updater assets. `SHA256SUMS.txt` contains checksums.
 

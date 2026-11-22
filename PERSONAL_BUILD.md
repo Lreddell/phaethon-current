@@ -2,7 +2,7 @@
 
 This public fork combines the personal fixes and features from upstream PRs [#23](https://github.com/jerynv/phaethon/pull/23), [#24](https://github.com/jerynv/phaethon/pull/24), [#25](https://github.com/jerynv/phaethon/pull/25) and [#26](https://github.com/jerynv/phaethon/pull/26). Phaethon is made by Jeryn Vicari; its MIT license and third-party notices are preserved.
 
-The default `personal` branch contains the combined version. The upstream PR branches remain separate for review. Personal release versions are independent of upstream releases; 0.3.3 is the first combined personal build.
+The default `personal` branch contains the combined version. The upstream PR branches remain separate for review. Personal release versions are independent of upstream releases; 0.3.4 is the first combined personal release.
 
 ## Downloads
 
