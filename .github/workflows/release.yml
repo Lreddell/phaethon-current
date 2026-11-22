@@ -173,6 +173,20 @@ jobs:
           mkdir -p "$assets"
           gh release download "v$VERSION" --dir "$assets"
           cd "$assets"
+          # Linux packagers use their native architecture labels. Keep those
+          # originals for update manifests and offer x64 aliases for downloads.
+          for extension in AppImage deb; do
+            alias="Phaethon-$VERSION-linux-x64.$extension"
+            if [[ ! -s "$alias" ]]; then
+              architecture=x86_64
+              [[ "$extension" == deb ]] && architecture=amd64
+              original="Phaethon-$VERSION-linux-$architecture.$extension"
+              test -s "$original"
+              cp "$original" "$alias"
+              cmp "$original" "$alias"
+              gh release upload "v$VERSION" "$alias" --clobber
+            fi
+          done
           for asset in \
             "Phaethon-$VERSION-win-x64.exe" \
             "Phaethon-$VERSION-mac-arm64.dmg" \

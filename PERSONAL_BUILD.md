@@ -19,6 +19,8 @@ Windows installers are unsigned unless a signing certificate is configured. Mac 
 
 Each release contains `SHA256SUMS.txt` for checking downloaded files. The app uses this fork's update feed, so it keeps the personal release channel. Your vault, conversations and signed-in accounts are local data and are not included in these application downloads. Configure your accounts on each device.
 
+Linux releases also retain the packagers' `x86_64.AppImage` and `amd64.deb` filenames for update manifests. Their `x64` aliases contain identical bytes.
+
 ## Included changes
 
 - Claude Code uses a private system-prompt file to avoid operating-system launch limits.
