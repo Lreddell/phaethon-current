@@ -158,7 +158,7 @@ export function resolve(space: string, visible: Visible, rel: string): Source {
 }
 
 /** One imported course a space can make cards from, and which standard parts it has. */
-export type CourseSource = { name: string; folder: string; code?: string; syllabus: boolean; assignments: boolean; files: boolean; readings: boolean };
+export type CourseSource = { name: string; folder: string; code?: string; syllabus: boolean; assignments: boolean; files: boolean; readings: boolean; pages?: boolean; announcements?: boolean };
 
 export function courses(visible: Visible): CourseSource[] {
   const out: CourseSource[] = [];
@@ -177,6 +177,8 @@ export function courses(visible: Visible): CourseSource[] {
       assignments: can(seen, "assignments") && plain("assignments.md"),
       files: can(seen, "files") && plain("files"),
       readings: can(seen, "files") && plain("readings"),
+      pages: can(seen, "files") && plain("pages"),
+      announcements: can(seen, "announcements") && plain("announcements.md"),
     });
   }
   return stableSort(out, (a, b) => {
@@ -220,7 +222,7 @@ function findFiles(space: string, visible: Visible, inputs: string[], focus: str
   }
   const found: Found[] = [];
   const inCourse = (seen: Seen, dir: string, start: string) => {
-    for (const [sub, f] of visible.walk(seen, dir, start, MAX_FILES)) {
+    for (const [sub, f] of visible.walk(seen, dir, start, Infinity)) {
       const label = courseLabel(seen, sub, f);
       if (isText(f) && !isIndex(label)) found.push({ weight: weight(label, false, focus), label, real: f, course: { seen, sub } });
     }
@@ -565,7 +567,7 @@ export function courseFiles(visible: Visible, seen: Seen): CourseFile[] {
   const dir = visible.dirOf(seen);
   if (!dir) return [];
   const out: CourseFile[] = [];
-  for (const [sub, real] of visible.walk(seen, dir, dir, MAX_FILES)) {
+  for (const [sub, real] of visible.walk(seen, dir, dir, Infinity)) {
     const label = courseLabel(seen, sub, real);
     if (!isText(real) || isIndex(label)) continue;
     let meta: fs.Stats;
@@ -579,6 +581,12 @@ export function courseFiles(visible: Visible, seen: Seen): CourseFile[] {
     out.push({ text: filterText(seen, sub, text), label, sub, size: meta.size, modified: Math.floor(meta.mtimeMs) });
   }
   return stableSort(out, (a, b) => cmpBytes(a.label, b.label));
+}
+
+/** Keep only the chosen files/parts, resolving originals and text copies the same way as gather. */
+export function selectCourseFiles(space: string, visible: Visible, inputs: readonly string[], files: readonly CourseFile[]): CourseFile[] {
+  const labels = new Set(findFiles(space, visible, [...inputs], []).map((f) => f.label));
+  return files.filter((f) => labels.has(f.label));
 }
 
 /** The one course `inputs` all come from, when they name exactly one course the space sees. */

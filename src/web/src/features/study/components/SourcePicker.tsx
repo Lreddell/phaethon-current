@@ -13,17 +13,19 @@ import { partPath } from "../lib/kinds";
 import type { CourseSource } from "../lib/types";
 import { useLoad } from "../use-load";
 
-type Part = "syllabus" | "assignments" | "files" | "readings";
+type Part = "syllabus" | "assignments" | "files" | "readings" | "pages" | "announcements";
 const PARTS: { part: Part; label: string }[] = [
   { part: "syllabus", label: "Syllabus" },
   { part: "assignments", label: "Assignments" },
   { part: "files", label: "Course files" },
   { part: "readings", label: "Readings" },
+  { part: "pages", label: "Pages" },
+  { part: "announcements", label: "Announcements" },
 ];
 
 /**
  * What to make cards or questions from: each course the space sees, its
- * parts (syllabus, assignments, files, readings), and the course's files one
+ * parts (syllabus, assignments, files, readings, pages, announcements), and files one
  * by one when "Course files" is opened. `chosen` holds the paths study_make_*
  * takes.
  */
@@ -33,7 +35,7 @@ export function SourcePicker({ space, sources, chosen, onChange }: { space: stri
   const keyOf = (folder: string) => access.data?.courses.find((c) => c.folder === folder)?.key;
 
   return (
-    <div className="max-h-64 overflow-y-auto rounded-xl border bg-card">
+    <div className="overflow-hidden rounded-xl border bg-card">
       {sources.map((c) => {
         const parts = PARTS.filter((p) => c[p.part]);
         const paths = parts.map((p) => partPath(c.folder, p.part));

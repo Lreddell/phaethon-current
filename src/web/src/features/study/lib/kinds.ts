@@ -12,8 +12,8 @@ export const KINDS: { kind: QuestionKind; label: string }[] = [
 export const kindLabel = (k: QuestionKind) => KINDS.find((x) => x.kind === k)?.label ?? k;
 
 /** The paths a course's parts stand for, as study_make_* takes them. */
-export function partPath(folder: string, part: "syllabus" | "assignments" | "files" | "readings"): string {
-  return part === "syllabus" ? `${folder}/syllabus.md` : part === "assignments" ? `${folder}/assignments.md` : `${folder}/${part}`;
+export function partPath(folder: string, part: "syllabus" | "assignments" | "files" | "readings" | "pages" | "announcements"): string {
+  return ["syllabus", "assignments", "announcements"].includes(part) ? `${folder}/${part}.md` : `${folder}/${part}`;
 }
 
 /** The courses (folders) that chosen paths come from. */

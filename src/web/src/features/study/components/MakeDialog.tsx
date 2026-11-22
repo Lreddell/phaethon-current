@@ -51,7 +51,7 @@ import type { CourseSource, Grounding, ScopeView, UnknownScope } from "../lib/ty
 import { plural, type MakeProgress } from "../lib/words";
 import type { StudyScreen } from "../StudyView";
 import { type Loaded, useLoad } from "../use-load";
-import { AutoHeight, EASE, Slide } from "./motion";
+import { EASE, Slide } from "./motion";
 import { Disc, JobBar } from "./parts";
 import { SourcePicker } from "./SourcePicker";
 
@@ -99,6 +99,7 @@ export function MakeDialog({
 }) {
   const [draft, setDraft] = useState<MakeDraft>(() => given ?? emptyDraft(kind));
   const [phase, setPhase] = useState<Phase>("what");
+  const panel = useRef<HTMLDivElement>(null);
   const [dir, setDir] = useState<1 | -1>(1);
   const [errs, setErrs] = useState<{ exam?: string; covers?: string; count?: string; kinds?: string; course?: string }>({});
   const [editScope, setEditScope] = useState(false);
@@ -112,6 +113,11 @@ export function MakeDialog({
   const quiz = draft.kind === "quiz";
   const noun = quiz ? "question" : "card";
   const patch = (p: Partial<MakeDraft>) => setDraft((d) => ({ ...d, ...p }));
+
+  // A new step starts with its first controls, even after scrolling through a long source list.
+  useEffect(() => {
+    panel.current?.closest<HTMLElement>('[data-slot="scroll-area-viewport"]')?.scrollTo({ top: 0 });
+  }, [phase]);
 
   // A fresh flow each time it opens; a draft from chat starts at its second step; a run under way shows where it is.
   useEffect(() => {
@@ -233,7 +239,7 @@ export function MakeDialog({
       {/* Anchored near the top (not centred) so its top edge stays put as the steps change height. */}
       <DialogPopup className="row-span-3 row-start-1 mt-(--dialog-top) max-h-(--dialog-anchored-max-height) max-w-xl self-start rounded-panel" showCloseButton={false} aria-label={label}>
         <form onSubmit={onSubmit} className="contents">
-          <DialogHeader className="@container/makehead gap-4 p-6 pr-6 pb-4">
+          <DialogHeader className="@container/makehead shrink-0 gap-4 p-6 pr-6 pb-4">
             <div className="flex items-start gap-3">
               <DialogTitle className="min-w-0 flex-1">{label}</DialogTitle>
               <DialogClose render={<Button size="icon-sm" variant="ghost-muted" aria-label="Close" className="-mt-1 -mr-2" />}>
@@ -263,64 +269,62 @@ export function MakeDialog({
             </div>
           </DialogHeader>
 
-          <DialogPanel className="space-y-0 px-6 pt-1 pb-2">
-            <AutoHeight>
-              <Slide id={phase} dir={dir}>
-                {phase === "what" ? (
-                  <WhatStep
-                    space={space}
-                    draft={draft}
-                    patch={(p) => (patch(p), setErrs({}))}
-                    sources={sources}
-                    course={course}
-                    scope={scope}
-                    options={options}
-                    scopeNow={scopeNow}
-                    examTitle={examTitle}
-                    editScope={editScope}
-                    setEditScope={setEditScope}
-                    errs={errs}
-                    pick={pick.pick}
-                    onClose={close}
-                  />
-                ) : null}
-                {phase === "how" ? (
-                  <HowStep
-                    draft={draft}
-                    patch={(p) => (patch(p), setErrs({}))}
-                    errs={errs}
-                    course={course?.name ?? "Chosen files"}
-                    scope={scopeTag}
-                    model={pick.pick ? <ModelPicker pick={pick.pick} onPick={pick.set} /> : <Skeleton className="h-4 w-28" />}
-                    onChange={() => go("what", -1)}
-                  />
-                ) : null}
-                {phase === "ask" && needs ? (
-                  <div className="flex flex-col gap-3 pb-2">
-                    <Note icon={icons.map} title={`What does ${needs.exam} cover?`}>
-                      {needs.courseName}’s materials don’t say, and questions are only written on what’s in scope. Tap topics or say it in a few words.
-                    </Note>
-                    <AskScope view={scope.data ?? null} value={draft.covers} onChange={(covers) => patch({ covers })} autoFocus />
-                  </div>
-                ) : null}
-                {phase === "run" ? <RunView progress={job?.progress ?? null} fraction={job?.fraction ?? 0} started={job?.started ?? Date.now()} quiz={quiz} course={course?.name} exam={examTitle || undefined} stopping={stopping} /> : null}
-                {phase === "error" && failure ? (
-                  <div className="flex flex-col gap-3 pb-2">
-                    <SurfaceError title={failure.advice.title} message={`${failure.message}\n\n${failure.advice.hint}`} />
-                    {failure.advice.action === "model" && pick.pick ? (
-                      <div className="flex items-center gap-2 text-sm" data-testid="study-model">
-                        <span className="text-muted-foreground">Model</span>
-                        <ModelPicker pick={pick.pick} onPick={pick.set} />
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-                {phase === "done" && done ? <DoneView done={done} quiz={quiz} /> : null}
-              </Slide>
-            </AutoHeight>
+          <DialogPanel ref={panel} scrollAreaClassName="flex flex-col [&>[data-slot=scroll-area-viewport]]:min-h-0" className="space-y-0 px-6 pt-1 pb-2">
+            <Slide id={phase} dir={dir}>
+              {phase === "what" ? (
+                <WhatStep
+                  space={space}
+                  draft={draft}
+                  patch={(p) => (patch(p), setErrs({}))}
+                  sources={sources}
+                  course={course}
+                  scope={scope}
+                  options={options}
+                  scopeNow={scopeNow}
+                  examTitle={examTitle}
+                  editScope={editScope}
+                  setEditScope={setEditScope}
+                  errs={errs}
+                  pick={pick.pick}
+                  onClose={close}
+                />
+              ) : null}
+              {phase === "how" ? (
+                <HowStep
+                  draft={draft}
+                  patch={(p) => (patch(p), setErrs({}))}
+                  errs={errs}
+                  course={course?.name ?? "Chosen files"}
+                  scope={scopeTag}
+                  model={pick.pick ? <ModelPicker pick={pick.pick} onPick={pick.set} /> : <Skeleton className="h-4 w-28" />}
+                  onChange={() => go("what", -1)}
+                />
+              ) : null}
+              {phase === "ask" && needs ? (
+                <div className="flex flex-col gap-3 pb-2">
+                  <Note icon={icons.map} title={`What does ${needs.exam} cover?`}>
+                    {needs.courseName}’s materials don’t say, and questions are only written on what’s in scope. Tap topics or say it in a few words.
+                  </Note>
+                  <AskScope view={scope.data ?? null} value={draft.covers} onChange={(covers) => patch({ covers })} autoFocus />
+                </div>
+              ) : null}
+              {phase === "run" ? <RunView progress={job?.progress ?? null} fraction={job?.fraction ?? 0} started={job?.started ?? Date.now()} quiz={quiz} course={course?.name} exam={examTitle || undefined} stopping={stopping} /> : null}
+              {phase === "error" && failure ? (
+                <div className="flex flex-col gap-3 pb-2">
+                  <SurfaceError title={failure.advice.title} message={`${failure.message}\n\n${failure.advice.hint}`} />
+                  {failure.advice.action === "model" && pick.pick ? (
+                    <div className="flex items-center gap-2 text-sm" data-testid="study-model">
+                      <span className="text-muted-foreground">Model</span>
+                      <ModelPicker pick={pick.pick} onPick={pick.set} />
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {phase === "done" && done ? <DoneView done={done} quiz={quiz} /> : null}
+            </Slide>
           </DialogPanel>
 
-          <DialogFooter variant="bare" className="flex-row gap-2 px-6 pt-4 pb-6">
+          <DialogFooter variant="bare" className="shrink-0 flex-row gap-2 px-6 pt-4 pb-6">
             {phase === "what" ? (
               <>
                 <Button type="button" variant="outline" onClick={close}>
@@ -498,7 +502,7 @@ function Note({ icon, glyph, title, children, tone = "muted", action }: { icon?:
 
 // ---- Step 1: what ----
 
-const PART_NAME = { syllabus: "Syllabus", assignments: "Assignments", files: "Files", readings: "Readings" } as const;
+const PART_NAME = { syllabus: "Syllabus", assignments: "Assignments", files: "Files", readings: "Readings", pages: "Pages", announcements: "Announcements" } as const;
 
 /** Courses as cards, three across (after 9091's plan cards): a glyph and the name on the white sheet, one short fact in the footer strip. */
 function CoursePicker({ sources, value, onChange, invalid }: { sources: CourseSource[]; value: string | null; onChange: (folder: string) => void; invalid?: boolean }) {
@@ -511,7 +515,7 @@ function CoursePicker({ sources, value, onChange, invalid }: { sources: CourseSo
       className="grid max-h-80 grid-cols-2 gap-2 overflow-y-auto p-0.5 @sm/dialog:grid-cols-3"
     >
       {sources.map((s) => {
-        const parts = (["syllabus", "assignments", "files", "readings"] as const).filter((p) => s[p]);
+        const parts = (["syllabus", "assignments", "files", "readings", "pages", "announcements"] as const).filter((p) => s[p]);
         const first = parts[0] ? PART_NAME[parts[0]] : null;
         const fact = first ? (parts.length > 1 ? `${first} +${parts.length - 1}` : first) : "Nothing to read yet";
         return (

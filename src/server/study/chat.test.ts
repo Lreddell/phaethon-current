@@ -38,8 +38,8 @@ describe("blocks", () => {
     expect(a.sources).toEqual(["courses/X"]);
 
     const b = parse('{"kind":"quiz","count":500}');
-    expect(b.count).toBe(50);
-    expect(b.notes[0]).toContain("At most 50");
+    expect(b.count).toBe(100);
+    expect(b.notes[0]).toContain("At most 100");
     expect(b.kinds).toEqual(["choice", "truefalse", "short"]);
     expect(parse('{"kind":"flashcards"}').count).toBe(20);
     expect(parse('{"kind":"deck","count":"7"}').count).toBe(7);

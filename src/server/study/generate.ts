@@ -17,7 +17,7 @@ import type { Visible } from "./visible.ts";
  */
 
 export const GENERATE_MAX_CARDS = 100;
-export const GENERATE_MAX_QUESTIONS = 50;
+export const GENERATE_MAX_QUESTIONS = 100;
 const EXISTING_MAX = 150;
 
 export type DeckOptions = { count?: number; focus?: string | null; title?: string | null; fromAttempt?: string | null; context?: string | null; exam?: string | null };
