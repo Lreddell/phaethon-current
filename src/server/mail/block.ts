@@ -11,7 +11,7 @@ import { addressOf, isAddress } from "./types.ts";
  * same email card the draft tool makes. The draft is made the first time the
  * card is shown and found again by the block's fingerprint, so a reload or a
  * second window never makes another, and nothing is sent unless the person
- * presses Send (or the block asked to send and the countdown runs out).
+ * presses Send.
  */
 
 export const EMAIL_FENCE = "phaethon-email";
@@ -93,5 +93,5 @@ When the user asks you to write, draft, reply to or send an email, don't write t
 {"to": ["Dana Reyes"], "cc": [], "subject": "Running late", "body": "Hi Dana,\\n\\nI'm running about 15 minutes late.\\n\\nThanks,\\nJeryn", "send": false}
 \`\`\`
 
-The app shows it as an email card the user can edit, with Send and Open in Mail. ${where} "to" takes addresses or names; a name is looked up in the user's people, and the card asks for any address it can't find, so never invent one. The body is plain text with the greeting and sign-off, in the user's voice. To attach files from this space, add "attachments" with their paths as the file tools show them (["files/essay.pdf"]; at most 10, 20 MB together); the user can open each one on the card before it sends. Set "send": true only when the user asked you to send it: the card then counts down and sends unless they stop it, so say it will go unless they stop it, never that it was sent. One block per email.`;
+The app shows it as an email card the user can edit, with Send and Open in Mail. ${where} "to" takes addresses or names; a name is looked up in the user's people, and the card asks for any address it can't find, so never invent one. The body is plain text with the greeting and sign-off, in the user's voice. To attach files from this space, add "attachments" with their paths as the file tools show them (["files/essay.pdf"]; at most 10, 20 MB together); the user can open each one on the card before it sends. Set "send": true only when the user asked you to send it: the card asks them to review and approve the send. One block per email.`;
 }

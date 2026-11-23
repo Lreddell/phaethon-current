@@ -19,7 +19,8 @@ import {
 import { addNotice, readProfile } from "../../memory/profile.ts";
 import { contentWords, scoreItems, stem } from "../../memory/relevance.ts";
 import { CHANNELS, describePerson, findPeople, logInteraction, newPerson, normalEmail, personRefs, readPerson, savePerson, canSee, type Channel_, type Person } from "../../people/people.ts";
-import { accountsFor, appOf, connector, mailEnabledFor, readMailSettings, resolveAccount } from "../../mail/access.ts";
+import { accountsFor, appOf, connector, mailEnabledFor, resolveAccount } from "../../mail/access.ts";
+import { authorizeIntegration } from "../../integrations/policy.ts";
 import { createDraft } from "../../mail/outbox.ts";
 import { decodeRef, type MailSummary } from "../../mail/types.ts";
 import { allowedShortcuts, runShortcut } from "../../shortcuts/shortcuts.ts";
@@ -167,7 +168,7 @@ export const MAIL_READ: ToolDef = {
 export const DRAFT_EMAIL: ToolDef = {
   name: "draft_email",
   description:
-    "Show the user an email to send from one of this space's accounts, as a card they can edit. intent \"draft\" when they asked you to write or draft it: it is never sent unless they send it. intent \"send\" only when they asked you to send it: the card counts down before sending and they can stop or edit it, so never say it was sent; say it will send unless they stop it. Write in the user's voice (see their profile), sign as they sign, and look the recipient up with person first.",
+    "Prepare email from one of this space's accounts. The user can review and edit the draft card. Sending requires the user to press Send on the card. Use intent \"send\" when they asked to send it. Write in the user's voice and look the recipient up with person first.",
   input_schema: {
     type: "object",
     properties: {
@@ -556,7 +557,7 @@ async function mailSearch(ctx: LifeCtx, i: Record<string, unknown>): Promise<Lif
         ...(typeof i.text === "string" && i.text.trim() ? { text: i.text.trim() } : {}),
         ...(i.unread === true ? { unread: true } : {}),
         limit,
-      });
+      }, ctx.signal);
       parts.push(`## ${a.name} (${a.emails.join(", ")})\n${list.length ? list.map(summaryLine).join("\n") : "Nothing matched."}`);
     } catch (e) {
       parts.push(`## ${a.name}\nCouldn’t search: ${(e as Error).message}`);
@@ -566,11 +567,11 @@ async function mailSearch(ctx: LifeCtx, i: Record<string, unknown>): Promise<Lif
 }
 
 async function mailRead(ctx: LifeCtx, i: Record<string, unknown>): Promise<LifeResult> {
-  const ref = line(i.ref, "ref", 2000);
+  const ref = line(i.ref, "ref", 8192);
   const r = decodeRef(ref);
   const key = `${r.app}:${r.account}`;
-  if (!accountsFor(ctx.space).some((a) => a.key === key)) throw new Refusal("that message is in an account this space can't use");
-  const m = await connector(appOf(key)).read(ref);
+  authorizeIntegration("read", ctx.unattended ? "unattended" : "agent", accountsFor(ctx.space).some((a) => a.key === key));
+  const m = await connector(appOf(key)).read(ref, ctx.signal);
   return {
     text:
       `From: ${m.from}\nTo: ${m.to.join(", ")}${m.cc.length ? `\nCc: ${m.cc.join(", ")}` : ""}\nDate: ${m.date}\nSubject: ${m.subject}\nMailbox: ${m.mailbox}\n\n` +
@@ -596,14 +597,8 @@ function draftEmail(ctx: LifeCtx, i: Record<string, unknown>): LifeResult {
     },
     { intent, thread: ctx.thread, unattended: ctx.unattended },
   );
-  const delay = readMailSettings().sendDelaySeconds;
   const attached = d.attachments?.length ? ` Attached: ${d.attachments.map((a) => a.name).join(", ")}.` : "";
-  const text =
-    (d.status === "scheduled"
-      ? `Shown to the user as a card from ${d.sender}. It will send in ${delay} seconds unless they stop or edit it. Don't say it was sent; say it's on its way unless they stop it.`
-      : intent === "send"
-        ? `Shown to the user as a draft from ${d.sender}; ${d.note ?? "it won't send by itself"}. Tell them it's ready for them to send.`
-        : `Shown to the user as a draft from ${d.sender}. It won't be sent unless they send it.`) + attached;
+  const text = `Shown as a draft from ${d.sender}. The user can review it and press Send.${attached}`;
   return { text, records: [{ kind: "mailDraft", id: d.id, intent }] };
 }
 

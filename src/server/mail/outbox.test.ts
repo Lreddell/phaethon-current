@@ -63,8 +63,11 @@ describe("the outbox", () => {
     newPerson({ name: "Dana Reyes", emails: ["dana@corp.com"] }, "work", "user");
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
     const d = createDraft("work", fields, { intent: "send", thread: "123" });
-    expect(d.status).toBe("scheduled");
-    expect(d.sendAt! - Date.now()).toBe(60_000);
+    expect(d.status).toBe("draft");
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(sent()).toEqual([]);
+    const approved = await sendDraft("work", d.id, 60, d.updated);
+    expect(approved.sendAt! - Date.now()).toBe(60_000);
     await vi.advanceTimersByTimeAsync(59_000);
     expect(sent()).toEqual([]);
     await vi.advanceTimersByTimeAsync(2_000);
@@ -77,11 +80,13 @@ describe("the outbox", () => {
   it("Stop cancels; Edit pauses; Send now sends at once", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
     const a = createDraft("work", fields, { intent: "send" });
+    await sendDraft("work", a.id, 60);
     stopSend("work", a.id);
     await vi.advanceTimersByTimeAsync(120_000);
     expect(readDraft("work", a.id)).toMatchObject({ status: "draft", note: "Stopped. Nothing was sent." });
 
     const b = createDraft("work", fields, { intent: "send" });
+    await sendDraft("work", b.id, 60);
     updateDraft("work", b.id, { body: "Hello, edited" });
     await vi.advanceTimersByTimeAsync(120_000);
     expect(readDraft("work", b.id)).toMatchObject({ status: "draft", body: "Hello, edited", note: "Paused while you edit." });
@@ -102,6 +107,8 @@ describe("the outbox", () => {
   it("a send whose time passed while Phaethon was closed goes back to draft; a future one is armed again", async () => {
     const past = createDraft("work", fields, { intent: "send" });
     const future = createDraft("work", fields, { intent: "send" });
+    await sendDraft("work", past.id, 60);
+    await sendDraft("work", future.id, 60);
     disarmAll();
     const raw = readDraft("work", past.id);
     fs.writeFileSync(path.join(env.home, "Phaethon/default/spaces/work/.phaethon/outbox", `${past.id}.json`), JSON.stringify({ ...raw, sendAt: Date.now() - 1000 }));
@@ -171,7 +178,10 @@ describe("attachments", () => {
     ]);
     await sendDraft("work", d.id, 0);
     expect(readDraft("work", d.id).status).toBe("sent");
-    expect(sent().at(-1).attachments).toEqual([fs.realpathSync(essay), fs.realpathSync(path.join(spaceDir("work"), "files/notes.md"))]);
+    const staged = sent().at(-1).attachments as string[];
+    expect(staged.map((file) => path.basename(file))).toEqual(["essay.pdf", "notes.md"]);
+    expect(staged[0]).not.toBe(fs.realpathSync(essay));
+    expect(staged.some((file) => fs.existsSync(file))).toBe(false);
   });
 
   it("goes into the compose window too, and a message without files has no attachments field", async () => {

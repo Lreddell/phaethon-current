@@ -5,7 +5,11 @@ import { Refusal } from "../rpc/registry.ts";
 import { AppleMail } from "./apple-mail.ts";
 import { FakeMail, fakeMailPath } from "./fake.ts";
 import { Outlook } from "./outlook.ts";
-import type { MailAccount, MailApp, MailConnector } from "./types.ts";
+import { WindowsOutlook } from "./outlook-win.ts";
+import { GraphMail } from "./graph.ts";
+import { graphAccounts } from "./graph-auth.ts";
+import { Providers } from "../integrations/registry.ts";
+import { isMailApp, type MailAccount, type MailApp, type MailConnector } from "./types.ts";
 
 /**
  * Who may use which mail: `<vault>/.phaethon/mail.json`. Connectors are off
@@ -20,7 +24,7 @@ export type MailSettings = {
   access: Record<string, string[]>;
   /** The accounts last found in the connectors that are on. */
   known: MailAccount[];
-  /** The agent may ask to send (always with a countdown). Off: drafts only. */
+  /** The user may approve a send. Off: drafts only. */
   allowSend: boolean;
   /** Seconds between the agent's send and the send happening. */
   sendDelaySeconds: number;
@@ -50,7 +54,7 @@ function parse(raw: unknown): MailSettings {
   const o = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
   const connectors: MailSettings["connectors"] = {};
   if (o.connectors && typeof o.connectors === "object") {
-    for (const [k, v] of Object.entries(o.connectors as Record<string, unknown>)) if ((k === "apple-mail" || k === "outlook" || k === "fake") && typeof v === "boolean") connectors[k] = v;
+    for (const [k, v] of Object.entries(o.connectors as Record<string, unknown>)) if (isMailApp(k) && typeof v === "boolean") connectors[k] = v;
   }
   const access: Record<string, string[]> = {};
   if (o.access && typeof o.access === "object") {
@@ -95,7 +99,16 @@ export function setConnectors(c: Partial<Record<MailApp, MailConnector>> | undef
   overrides = c;
 }
 
-const built = new Map<MailApp, MailConnector>();
+const built = new Providers<MailApp, MailConnector>()
+  .register("apple-mail", () => new AppleMail())
+  .register("outlook", () => new Outlook())
+  .register("outlook-win", () => new WindowsOutlook())
+  .register("graph", () => new GraphMail())
+  .register("fake", () => {
+    const file = fakeMailPath();
+    if (!file) throw new Refusal("No test mail.");
+    return new FakeMail(file);
+  });
 
 export function connector(app: MailApp): MailConnector {
   if (overrides) {
@@ -103,33 +116,25 @@ export function connector(app: MailApp): MailConnector {
     if (!c) throw new Refusal(`No ${app} connector.`);
     return c;
   }
-  let c = built.get(app);
-  if (!c) {
-    if (app === "fake") {
-      const file = fakeMailPath();
-      if (!file) throw new Refusal("No test mail.");
-      c = new FakeMail(file);
-    } else c = app === "apple-mail" ? new AppleMail() : new Outlook();
-    built.set(app, c);
-  }
-  return c;
+  return built.get(app);
 }
 
 /** The apps Settings offers: the test app replaces the real ones when PHAETHON_FAKE_MAIL is set. */
 export function offeredApps(): MailApp[] {
   if (overrides) return Object.keys(overrides) as MailApp[];
-  return fakeMailPath() ? ["fake"] : ["apple-mail", "outlook"];
+  return fakeMailPath() ? ["fake"] : built.ids().filter((app) => app !== "fake");
 }
 
 export function appOf(accountKey: string): MailApp {
   const app = accountKey.split(":")[0];
-  if (app !== "apple-mail" && app !== "outlook" && app !== "fake") throw new Refusal("That isn’t a mail account Phaethon knows.");
+  if (!isMailApp(app)) throw new Refusal("That isn’t a mail account Phaethon knows.");
   return app;
 }
 
 /** The accounts this space may use (connector on, account assigned to the space). */
 export function accountsFor(space: string, s = readMailSettings()): MailAccount[] {
-  return s.known.filter((a) => s.connectors[a.app] === true && (s.access[a.key] ?? []).includes(space));
+  const local = s.connectors.graph ? new Set(graphAccounts().map((a) => a.key)) : new Set<string>();
+  return s.known.filter((a) => s.connectors[a.app] === true && (s.access[a.key] ?? []).includes(space) && (a.app !== "graph" || local.has(a.key)));
 }
 
 export function mailEnabledFor(space: string): boolean {
@@ -149,9 +154,12 @@ export function resolveAccount(space: string, want: string | undefined): MailAcc
     throw new Refusal(`This space has more than one mail account; say which: ${mine.map((a) => `${a.name} (${a.emails.join(", ")})`).join("; ")}.`);
   }
   const w = want.trim().toLowerCase();
-  const hit = mine.find((a) => a.key.toLowerCase() === w || a.name.toLowerCase() === w || a.emails.includes(w));
-  if (!hit) throw new Refusal(`“${want}” isn’t one of this space’s mail accounts: ${mine.map((a) => `${a.name} (${a.emails.join(", ")})`).join("; ")}.`);
-  return hit;
+  const exact = mine.find((a) => a.key.toLowerCase() === w);
+  if (exact) return exact;
+  const hits = mine.filter((a) => a.name.toLowerCase() === w || a.emails.includes(w));
+  if (hits.length === 1) return hits[0]!;
+  if (hits.length > 1) throw new Refusal("More than one connection uses that address. Select the exact account.");
+  throw new Refusal(`“${want}” isn’t one of this space’s mail accounts: ${mine.map((a) => `${a.name} (${a.emails.join(", ")})`).join("; ")}.`);
 }
 
 /** Asks every connector that is on for its accounts and remembers them. */

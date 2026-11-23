@@ -15,22 +15,32 @@ import type { MailApp } from "./types.ts";
 import { accountsFor } from "./access.ts";
 import { draftForBlock } from "./block.ts";
 import { appIcon } from "./app-icons.ts";
+import { cancelGraphSignIn, connectGraph, disconnectGraph, graphAccounts } from "./graph-auth.ts";
+import { host } from "../host.ts";
+import { IntegrationFailure, type Health } from "../integrations/registry.ts";
 
 /** Settings › Mail & connectors, and the draft card's buttons. */
 
 async function appsView() {
   const s = readMailSettings();
-  const out = [];
-  for (const app of offeredApps()) {
-    let available = { ok: false, reason: "Unknown" } as { ok: boolean; reason?: string };
+  return Promise.all(offeredApps().map(async (app) => {
+    const provider = connector(app);
+    let health: Health;
     try {
-      available = await connector(app).available();
+      if (app === "graph" && !s.connectors.graph) health = { state: "not-connected", reason: "Connect an Outlook or Microsoft 365 account through Microsoft Graph." };
+      else if (provider.health) health = await provider.health();
+      else {
+        const available = await provider.available();
+        health = available.ok
+          ? { state: s.connectors[app] && s.known.some((a) => a.app === app) ? "ready" : "setup" }
+          : { state: process.platform === "darwin" ? "not-installed" : "unsupported", reason: available.reason };
+      }
     } catch (e) {
-      available = { ok: false, reason: messageOf(e) };
+      health = e instanceof IntegrationFailure ? { state: e.state, reason: e.message } : { state: "offline", reason: "Couldn’t check this mail provider." };
     }
-    out.push({ app, label: connector(app).label, enabled: s.connectors[app] === true, ...available });
-  }
-  return out;
+    return { app, label: provider.label, enabled: s.connectors[app] === true, state: health.state,
+      ok: health.state === "ready" || (health.state === "setup" && app !== "outlook-win"), reason: health.reason, data: app === "graph" ? "cloud" : "local" };
+  }));
 }
 
 function spaceIds(): string[] {
@@ -85,6 +95,27 @@ const space_ = (s: unknown) => {
 commands({
   mail_settings_get: async () => ({ settings: readMailSettings(), apps: await appsView(), delays: SEND_DELAYS, spaces: spaceIds() }),
 
+  mail_graph_status: () => ({ desktop: host().available, accounts: graphAccounts() }),
+  mail_graph_connect: async (input: { clientId?: unknown; key?: unknown; scope?: unknown }, ctx) => {
+    if (!offeredApps().includes("graph")) throw new Refusal("Microsoft Graph isn’t available in this session.");
+    const account = await connectGraph(input ?? {}, ctx.signal);
+    const accounts = await connector("graph").accounts();
+    updateMailSettings((s) => {
+      s.connectors.graph = true;
+      s.known = [...s.known.filter((a) => a.app !== "graph"), ...accounts];
+    });
+    return account;
+  },
+  mail_graph_cancel: () => { cancelGraphSignIn(); },
+  mail_graph_disconnect: async ({ key }: { key: string }) => {
+    await disconnectGraph(key);
+    updateMailSettings((s) => {
+      delete s.access[key];
+      s.known = s.known.filter((a) => a.key !== key);
+      if (!s.known.some((a) => a.app === "graph")) s.connectors.graph = false;
+    });
+  },
+
   mail_settings_set: ({ patch }: { patch: Partial<Pick<MailSettings, "allowSend" | "sendDelaySeconds" | "indexForPeople" | "addPeopleFromMail">> }) =>
     updateMailSettings((s) => {
       for (const k of ["allowSend", "indexForPeople", "addPeopleFromMail"] as const) if (typeof patch?.[k] === "boolean") s[k] = patch[k]!;
@@ -133,7 +164,12 @@ commands({
   mail_draft_get: ({ space, id }: { space: string; id: string }) => readDraft(space_(space), id),
   mail_draft_update: ({ space, id, patch }: { space: string; id: string; patch: Partial<DraftFields> }) => updateDraft(space_(space), id, patch ?? {}),
   /** `now` sends at once; otherwise a short undo window. */
-  mail_draft_send: ({ space, id, now }: { space: string; id: string; now?: boolean }) => sendDraft(space_(space), id, now ? 0 : MANUAL_DELAY_SECONDS),
+  mail_draft_send: ({ space, id, now, revision }: { space: string; id: string; now?: boolean; revision?: number }) => {
+    const scoped = space_(space);
+    const draft = readDraft(scoped, id);
+    if (!Number.isSafeInteger(revision)) throw new Refusal("Review the current draft before sending.");
+    return sendDraft(scoped, id, now ? 0 : draft.intent === "send" ? readMailSettings().sendDelaySeconds : MANUAL_DELAY_SECONDS, revision);
+  },
   mail_draft_stop: ({ space, id }: { space: string; id: string }) => stopSend(space_(space), id),
   mail_draft_discard: ({ space, id }: { space: string; id: string }) => discardDraft(space_(space), id),
   mail_draft_open: ({ space, id }: { space: string; id: string }) => openDraft(space_(space), id),
@@ -190,3 +226,4 @@ onStart("recover the outbox", () => {
 });
 
 onStop("stop pending sends", () => disarmAll());
+onStop("cancel Microsoft sign-in", () => cancelGraphSignIn());

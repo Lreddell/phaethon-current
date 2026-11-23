@@ -6,6 +6,7 @@ import { Refusal } from "../rpc/registry.ts";
 import { byteLength } from "./fsx.ts";
 import { vaultName } from "./vault.ts";
 import { ChunkedSecretStore, type SecretStore } from "./chunked-secrets.ts";
+import { isTest } from "../env.ts";
 
 /**
  * The OS keychain, under the same service and account names the Rust core used
@@ -160,6 +161,17 @@ export function resetMemoryKeychain(): void {
   const memory = new MemoryStore();
   store = process.platform === "win32" ? new ChunkedSecretStore(memory) : memory;
   cache.clear();
+}
+
+/** New OAuth integrations use the native API on every OS. Never pass their tokens to a process. */
+let integrationStore: Store | undefined;
+export function integrationSecrets(): Store {
+  if (isTest()) return (store ??= new MemoryStore());
+  if (!integrationStore) {
+    const native = new KeyringStore();
+    integrationStore = process.platform === "win32" ? new ChunkedSecretStore(native) : native;
+  }
+  return integrationStore;
 }
 
 /** Reads an entry, moving a legacy `steward` entry over to `phaethon` the first time. */

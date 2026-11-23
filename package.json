@@ -40,6 +40,7 @@
     "telemetry:test:pipeline": "pnpm build && pnpm telemetry:build && tsx telemetry/scripts/smoke.ts --console"
   },
   "dependencies": {
+    "@azure/msal-node": "7.2.3",
     "@napi-rs/canvas": "^1.1.0",
     "@napi-rs/keyring": "^1.2.0",
     "@seydx/win-job": "0.1.0",

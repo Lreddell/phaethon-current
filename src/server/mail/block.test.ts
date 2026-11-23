@@ -54,9 +54,9 @@ describe("email blocks", () => {
     expect(updateDraft("work", a.id, { to: [...a.to, "ebony@corp.com"] }).missing).toBeUndefined();
   });
 
-  it("send: true counts down only when addressed and allowed", () => {
+  it("send: true still requires explicit approval", () => {
     const s = draftForBlock("work", JSON.stringify({ to: ["dana@corp.com"], subject: "Now", body: "x", send: true }));
-    expect(s.status).toBe("scheduled");
+    expect(s).toMatchObject({ status: "draft", intent: "send" });
     const n = draftForBlock("work", JSON.stringify({ to: ["Nobody Known"], subject: "Later", body: "x", send: true }));
     expect(n).toMatchObject({ status: "draft", note: "Add who it goes to, then send." });
   });

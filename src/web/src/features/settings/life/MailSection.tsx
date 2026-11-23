@@ -13,6 +13,10 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import {
   getShortcuts,
+  cancelGraph,
+  connectGraph,
+  disconnectGraph,
+  graphStatus,
   mailSettings,
   refreshAccounts,
   setAccountSpaces,
@@ -36,6 +40,49 @@ import { SmallSelect, SpaceSelect, SpacesPicker, useSpaceList, type SpaceLite } 
 
 
 const delayLabel = (s: number) => (s < 60 ? `${s} s` : `${s / 60} min`);
+
+function GraphConnection({ app, onChanged }: { app: MailAppView; onChanged: () => Promise<void> }) {
+  const local = useLoad(graphStatus, [], "mail:graph");
+  const [clientId, setClientId] = useState("");
+  const [pending, setPending] = useState<"signin" | "disconnect" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const change = async (kind: "signin" | "disconnect", task: () => Promise<unknown>) => {
+    setPending(kind);
+    setError(null);
+    try {
+      await task();
+      await Promise.all([local.reload(), onChanged()]);
+    } catch (e) {
+      setError(cleanMessage(e));
+    } finally {
+      setPending(null);
+    }
+  };
+  return (
+    <div>
+      <Row label={<span className="flex items-center gap-3"><AppMark app="graph" />Microsoft Graph</span>}
+        description={app.reason ?? "Connects to Outlook or Microsoft 365 through Microsoft’s cloud."} />
+      {local.data?.accounts.map((a) => (
+        <Row key={a.key} label={a.name} description={`${a.email} · ${a.scopes.includes("Mail.Send") ? "Read and send" : "Read only"}${a.scopes.includes("Mail.ReadWrite") ? " · Save drafts" : ""}`}>
+          <div className="flex flex-wrap justify-end gap-1">
+            <Button size="xs" variant="outline" disabled={!!pending} onClick={() => void change("signin", () => connectGraph({ key: a.key, scope: "Mail.Read" }))}>Reconnect</Button>
+            {!a.scopes.includes("Mail.Send") && <Button size="xs" variant="outline" disabled={!!pending} onClick={() => void change("signin", () => connectGraph({ key: a.key, scope: "Mail.Send" }))}>Enable sending</Button>}
+            {!a.scopes.includes("Mail.ReadWrite") && <Button size="xs" variant="outline" disabled={!!pending} onClick={() => void change("signin", () => connectGraph({ key: a.key, scope: "Mail.ReadWrite" }))}>Enable mailbox drafts</Button>}
+            <Button size="xs" variant="ghost" disabled={!!pending} onClick={() => void change("disconnect", () => disconnectGraph(a.key))}>Disconnect</Button>
+          </div>
+        </Row>
+      ))}
+      {local.data?.desktop ? (
+        <Row label="Desktop application ID" description="Use a Microsoft Entra public desktop registration with the loopback redirect URI http://localhost/oauth/callback.">
+          <Input aria-label="Microsoft application ID" size="compact" value={clientId} disabled={!!pending} onChange={(e) => setClientId(e.target.value)} />
+          <Button size="xs" variant="outline" disabled={!!pending || !clientId.trim()} onClick={() => void change("signin", () => connectGraph({ clientId }))}>Connect</Button>
+        </Row>
+      ) : local.data ? <EmptyRow>Use the desktop app to sign in with Microsoft.</EmptyRow> : null}
+      {pending === "signin" ? <Row label="Finish signing in in your browser"><Button size="xs" variant="outline" onClick={() => void cancelGraph()}>Cancel</Button></Row> : null}
+      {error || local.error ? <FieldError className="px-3 py-2">{error ?? cleanMessage(local.error)}</FieldError> : null}
+    </div>
+  );
+}
 
 function ConnectorRow({ app, onChanged }: { app: MailAppView; onChanged: () => Promise<void> }) {
   const [pending, setPending] = useState<boolean | null>(null);
@@ -245,9 +292,9 @@ export function MailSection() {
   const { pending, save } = useMailSetting(state);
   return (
     <>
-      <SettingsGroup label="Mail apps">
+      <SettingsGroup label="Mail apps" action={<Button size="xs" variant="outline" onClick={() => void state.reload()}>Refresh providers</Button>}>
         <Loader state={state} errorTitle="Couldn’t read the mail settings" skeleton={<SkeletonRows count={2} className="px-3 py-2" />}>
-          {(v) => (v.apps.length ? v.apps.map((a) => <ConnectorRow key={a.app} app={a} onChanged={state.reload} />) : <EmptyRow>No mail app can be used on this computer.</EmptyRow>)}
+          {(v) => (v.apps.length ? v.apps.map((a) => a.app === "graph" ? <GraphConnection key={a.app} app={a} onChanged={state.reload} /> : <ConnectorRow key={a.app} app={a} onChanged={state.reload} />) : <EmptyRow>No mail app can be used on this computer.</EmptyRow>)}
         </Loader>
       </SettingsGroup>
 
@@ -257,8 +304,8 @@ export function MailSection() {
 
           <SettingsGroup label="Sending">
             <SwitchRow
-              label="Let agents send mail"
-              description={state.data.settings.allowSend ? undefined : "Agents can only write drafts."}
+              label="Allow sending after approval"
+              description="Press Send on a draft to start the countdown."
               checked={state.data.settings.allowSend}
               pending={pending === "allowSend"}
               onCheckedChange={(v) => void save("allowSend", { allowSend: v })}

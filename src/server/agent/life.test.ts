@@ -186,7 +186,7 @@ describe("mail through the agent loop", () => {
     expect(systemOf(srv.seen[0]!)).toContain("me@corp.com");
   });
 
-  it("finds and reads mail, drafts without sending, and a send is scheduled with a countdown", async () => {
+  it("finds and reads mail, drafts without sending, and a proposed send waits for approval", async () => {
     const srv = await anthropic([
       anthropicReply([{ type: "tool_use", id: "toolu_s", name: "mail_search", input: { from: "dana", days: 3650 } }], "tool_use"),
       (seen) => {
@@ -209,9 +209,9 @@ describe("mail through the agent loop", () => {
     const draft = readDraft("work", drafts[0]!.id);
     expect(draft).toMatchObject({ status: "draft", sender: "Jeryn V <me@corp.com>", to: ["dana@corp.com"] });
     const sending = readDraft("work", drafts[1]!.id);
-    expect(sending.status).toBe("scheduled");
-    expect(sending.sendAt! - Date.now()).toBeGreaterThan(55_000);
-    expect(JSON.stringify(srv.seen[3]!.json.messages.at(-1))).toContain("unless they stop or edit it");
+    expect(sending.status).toBe("draft");
+    expect(sending.sendAt).toBeUndefined();
+    expect(JSON.stringify(srv.seen[3]!.json.messages.at(-1))).toContain("review it and press Send");
     expect(fs.existsSync(`${mailFile}.sent.jsonl`)).toBe(false);
     await call("mail_draft_stop", { space: "work", id: sending.id });
     expect(readDraft("work", sending.id).status).toBe("draft");
