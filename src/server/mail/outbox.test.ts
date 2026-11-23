@@ -194,6 +194,20 @@ describe("attachments", () => {
     fs.rmSync(`${file}.opened.jsonl`, { force: true });
   });
 
+  it("requires a new approval when an attached file changes without changing size", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const file = put("files/approval.txt", "first");
+    const draft = createDraft("work", { ...fields, attachments: ["files/approval.txt"] }, { intent: "send" });
+    await sendDraft("work", draft.id, 5, draft.updated);
+    fs.writeFileSync(file, "other");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(sent()).toHaveLength(0);
+    const failed = readDraft("work", draft.id);
+    expect(failed).toMatchObject({ status: "failed", error: expect.stringContaining("changed after approval") });
+    await sendDraft("work", draft.id, 0, failed.updated);
+    expect(sent()).toHaveLength(1);
+  });
+
   it("refuses anything that isn't a file inside this space", () => {
     put("files/a.txt", "a");
     fs.mkdirSync(path.join(spaceDir("school"), "files"), { recursive: true });

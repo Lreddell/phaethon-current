@@ -1,4 +1,3 @@
-import { PublicClientApplication } from "@azure/msal-node";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { IDENTITY } from "../../shared/channel.ts";
@@ -28,6 +27,11 @@ const file = () => path.join(appDataDir(), `graph-${vaultId()}.json`);
 const secretId = (key: string) => `${vaultId()}/graph/${key}`;
 let activeSignIn: AbortController | undefined;
 const pending = new Map<string, Promise<unknown>>();
+
+async function microsoftClient(clientId: string) {
+  const { PublicClientApplication } = await import("@azure/msal-node");
+  return new PublicClientApplication({ auth: { clientId, authority } });
+}
 
 function state(): State {
   const raw = readJson<State>(file(), { version: 1, accounts: [] });
@@ -83,7 +87,7 @@ export async function graphToken(key: string, scope: GraphScope, signal?: AbortS
       const secrets = integrationSecrets();
       const stored = secrets.get(service, id);
       if (!stored) throw new IntegrationFailure("not-connected", "Reconnect this Microsoft account to renew its sign-in.");
-      const client = new PublicClientApplication({ auth: { clientId: entry.clientId, authority } });
+      const client = await microsoftClient(entry.clientId);
       const cache = client.getTokenCache();
       cache.deserialize(stored);
       const account = await cache.getAccountByHomeId(entry.homeId);
@@ -114,7 +118,7 @@ export async function connectGraph(input: { clientId?: unknown; key?: unknown; s
   activeSignIn = controller;
   const lifetime = AbortSignal.any([controller.signal, signal, AbortSignal.timeout(180_000)]);
   try {
-    const client = new PublicClientApplication({ auth: { clientId, authority } });
+    const client = await microsoftClient(clientId);
     const { code, redirectUri, verifier } = await browserCode(async (redirectUri, state, codeChallenge) => {
       const url = await client.getAuthCodeUrl({
         scopes: wanted, redirectUri, state, codeChallenge, codeChallengeMethod: "S256",
