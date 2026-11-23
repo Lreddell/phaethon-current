@@ -46,6 +46,7 @@ import { activity, activityTarget, clip, label, parseCall, type Call } from "./t
 import { toolDefs, toolNamed } from "./tools/definitions.ts";
 import {
   describeWrite,
+  findSpaceFiles,
   isCovered,
   listFiles,
   MAX_PAGES_PER_TURN,
@@ -546,7 +547,8 @@ async function runOne(o: One): Promise<Outcome> {
       case "search_files": {
         const tgt = target(ctx.space, p);
         if (tgt.kind === "local") emit({ kind: "tool", label: label(ctx.space, call) });
-        const text = name === "list_files" ? listFiles(ctx, p) : name === "read_file" ? readFile(ctx, p) : searchFiles(ctx, String(i.query), p);
+        const text = name === "list_files" ? listFiles(ctx, p) : name === "read_file" ? readFile(ctx, p)
+          : i.mode === "name" ? JSON.stringify(await findSpaceFiles(ctx, String(i.query), p, signal)) : searchFiles(ctx, String(i.query), p);
         if (tgt.kind === "other") recordOtherRead(o, call, tgt.space, tgt.rel);
         return ok(text);
       }

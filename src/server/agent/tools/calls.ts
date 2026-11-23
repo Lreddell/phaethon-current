@@ -11,7 +11,7 @@ const ALLOWED: Record<string, string[]> = {
   list_files: ["path"],
   read_file: ["path"],
   read_page: ["path", "page"],
-  search_files: ["query", "path"],
+  search_files: ["query", "path", "mode"],
   write_file: ["path", "contents"],
   request_access: ["space", "path", "reason"],
   app_guide: [],
@@ -55,6 +55,8 @@ export function parseCall(name: string, input: unknown): { ok: true; call: Call 
     if (typeof page !== "number" || !Number.isInteger(page) || page < 1 || page > 10000) return { ok: false, error: "page must be a whole number from 1 to 10000" };
     out.page = page;
   }
+  if (name === "search_files" && out.mode && out.mode !== "content" && out.mode !== "name")
+    return { ok: false, error: 'mode must be "content" or "name"' };
   if (name === "write_file" && String(out.path).startsWith("@")) {
     const p = String(out.path);
     const rest = p.slice(1);

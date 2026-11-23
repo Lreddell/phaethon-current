@@ -219,6 +219,7 @@ function FilesPage({ space }: { space: SpaceView }) {
   const root = folders[cwd];
   const rootWaiting = useDelayed(mode === "all" && !searching && (!root || (root.loading && !root.entries.length && !root.error)));
   const searchWaiting = searching && found?.query !== query.trim();
+  const searchIndex = searching && !searchWaiting ? found?.data?.index : undefined;
   const touchedByPath = useMemo(() => new Map((relevant ?? []).map((t) => [t.path, t])), [relevant]);
 
   const count = searching
@@ -410,7 +411,7 @@ function FilesPage({ space }: { space: SpaceView }) {
             <p className="type-title min-w-0 flex-1 truncate">{mode === "recent" ? "Recently changed" : "Used in chats"}</p>
           )}
           <span className="type-meta type-live shrink-0" aria-live="polite">
-            {count}
+            {count}{searchIndex === "windows-search" ? " · Windows Search" : searchIndex === "spotlight" ? " · Spotlight" : ""}
           </span>
           <Tooltip>
             <TooltipTrigger

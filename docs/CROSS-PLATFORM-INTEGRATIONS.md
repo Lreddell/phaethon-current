@@ -12,12 +12,13 @@ This keeps Electron and provider-specific SDKs out of the agent tool interface. 
 | --- | --- | --- | --- |
 | Microsoft mailbox | Graph | Graph | Graph |
 | Calendar | Microsoft Graph and Google Calendar API | Microsoft Graph and Google Calendar API | Microsoft Graph and Google Calendar API |
+| File search | Windows Search and bounded Space search | Spotlight and bounded Space search | Bounded Space search |
 | Native mail app | Running classic Outlook profile | Apple Mail and legacy Outlook with Automation permission | — |
 | Workflows | Registered PowerShell scripts and attended Power Automate launch | Apple Shortcuts with existing per-space grants | Registered `/bin/sh` scripts |
 | Dictation | Local whisper.cpp and Windows voice typing | Local whisper.cpp and system dictation | Local whisper.cpp and desktop input method, where installed |
 | Background status | Tray, taskbar overlay and notifications | Menu bar, Dock and notifications | Tray and notifications where supported by the desktop |
 
-Dedicated Gmail and IMAP/SMTP sign-in, OS-backed file indexing and scheduling, Explorer integration, and Windows UI Automation remain open. Existing Phaethon schedules and vault search continue to work.
+Dedicated Gmail and IMAP/SMTP sign-in, OS-backed scheduling, Explorer integration, and Windows UI Automation remain open. Existing Phaethon schedules continue to work.
 
 ## Connect Microsoft mail
 
@@ -36,6 +37,10 @@ In **Settings → Calendar**, enter a Microsoft Entra desktop application ID and
 For Google Calendar, enable the Calendar API in a Google Cloud project and configure its OAuth consent screen. Create a **Desktop app** OAuth client and download its JSON. In **Settings → Calendar → Google Calendar**, select **Choose JSON and connect** and finish sign-in in the browser. Phaethon stores the client credential and refresh token in the OS keychain. If the project is in testing mode, add the intended account as a test user. A public app may require Google verification or Workspace administrator approval. **Enable editing** starts a new consent flow for event writes. [Google desktop OAuth](https://developers.google.com/identity/protocols/oauth2/native-app) and [Calendar scopes](https://developers.google.com/workspace/calendar/api/auth).
 
 Choose an account, a calendar and a date range to see events, search the results, or check busy times. The view displays UTC and the event details show the original time zone when the provider supplies it. When editing is enabled, you can create single or weekly events with no attendees. For events you organize with no attendees, you can change the title, location and description or delete the event. Use the original calendar app to change existing times, edit recurring series, or manage invitations. Every change has a review step and creating an identical event again within 24 hours returns the earlier result. [Microsoft Graph transaction IDs](https://learn.microsoft.com/en-us/graph/api/resources/event?view=graph-rest-1.0#properties) and [Google conditional changes](https://developers.google.com/workspace/calendar/api/guides/version-resources).
+
+## Search within a Space
+
+The Files view continues to search the current Space. When the local scan hits its limit, Windows Search or Spotlight can supply additional verified filenames. Phaethon’s agent can also search by filename and see the relative path, size, and modification time. Its existing content search returns line excerpts, including imported OCR text. Searches in another Space still require a folder grant. Agent search skips excluded folders and Phaethon’s state, checks symlinks and stale results, and uses the local scan whenever the system index is unavailable. Linux uses the local scan. [Windows Search index queries](https://learn.microsoft.com/en-us/windows/win32/search/using-sql-and-aqs-to-query-the-index) and [Apple Spotlight query syntax](https://developer.apple.com/library/archive/documentation/Carbon/Conceptual/SpotlightQuery/Concepts/QueryFormat.html).
 
 ## Register a local workflow
 

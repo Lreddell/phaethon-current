@@ -1,4 +1,5 @@
 import { invoke } from "@/lib/core";
+import type { FileCatalogProvider } from "#shared/file-catalog";
 
 /** The Files view's calls to the core (`src/server/files/commands.ts`). */
 
@@ -29,7 +30,7 @@ export type FolderPage = {
   total: number;
   offset: number;
 };
-export type Found = { entries: FileEntry[]; truncated: boolean };
+export type Found = { entries: FileEntry[]; truncated: boolean; index?: FileCatalogProvider };
 export type Touched = {
   path: string;
   how: "read" | "wrote" | "attached";

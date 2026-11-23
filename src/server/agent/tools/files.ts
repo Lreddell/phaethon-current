@@ -10,6 +10,7 @@ import { filterCourseText, resolveCoursePath, visibleCourses } from "../../lms/a
 import { renderPdfPage } from "../../lms/text/pages.ts";
 import { listAttempts, loadAttempt } from "../../study/attempts.ts";
 import { search as runSearch, type Root } from "./search.ts";
+import { searchFileCatalog } from "../../files/catalog.ts";
 import { excludedFolder, excludedRefusal, exclusionsFor, type Exclusions } from "../../files/settings.ts";
 
 /**
@@ -249,6 +250,14 @@ export async function readPage(ctx: ToolCtx, p: string, page: number): Promise<B
 }
 
 export function searchFiles(ctx: ToolCtx, query: string, p: string): string {
+  return runSearch(searchRoots(ctx, p), query);
+}
+
+export function findSpaceFiles(ctx: ToolCtx, query: string, p: string, signal?: AbortSignal) {
+  return searchFileCatalog(() => searchRoots(ctx, p), query, signal);
+}
+
+function searchRoots(ctx: ToolCtx, p: string): Root[] {
   const t = target(ctx.space, p);
   if (t.kind === "other") {
     const place = resolveOther(ctx, t.space, t.rel);
@@ -256,7 +265,7 @@ export function searchFiles(ctx: ToolCtx, query: string, p: string): string {
     if (!fs.statSync(place.real).isDirectory()) throw new Refusal(`"${p}" is a file, not a folder`);
     const otherEx = exclusionsFor(t.space, spaceDir(t.space));
     const base = cleanRel(place.clean);
-    return runSearch([{ dir: place.real, prefix, skip: skipper(otherEx, base, place.real) }], query);
+    return [{ dir: place.real, prefix, skip: skipper(otherEx, base, place.real) }];
   }
   const parts = cleanRel(t.rel);
   const courseRoot = (folder: string): Root | undefined => {
@@ -288,25 +297,25 @@ export function searchFiles(ctx: ToolCtx, query: string, p: string): string {
       const r = courseRoot(c.folder);
       if (r) roots.push(r);
     }
-    return runSearch(roots, query);
+    return roots;
   }
   if (parts[0].toLowerCase() === "courses") {
     if (parts.length === 1) {
-      return runSearch(visibleCourses(ctx.space).map((c) => courseRoot(c.folder)).filter((r): r is Root => !!r), query);
+      return visibleCourses(ctx.space).map((c) => courseRoot(c.folder)).filter((r): r is Root => !!r);
     }
     const folder = parts[1];
     const r = courseRoot(folder);
     if (!r) resolveCoursePath(ctx.space, parts.join("/"), true);
     const sub = parts.slice(2).join("/");
-    if (!sub) return runSearch([r!], query);
+    if (!sub) return [r!];
     const dir = resolveCoursePath(ctx.space, parts.join("/"), true);
-    return runSearch([{ ...r!, dir, prefix: `courses/${folder}/${sub}/`, allow: (rel) => r!.allow!(`${sub}/${rel}`), filter: (rel, text) => r!.filter!(`${sub}/${rel}`, text) }], query);
+    return [{ ...r!, dir, prefix: `courses/${folder}/${sub}/`, allow: (rel) => r!.allow!(`${sub}/${rel}`), filter: (rel, text) => r!.filter!(`${sub}/${rel}`, text) }];
   }
   const real = resolveIn(ctx.root, t.rel, true);
   const ex = exclusionsFor(ctx.space, ctx.root);
   guard(ex, t.rel, parts, real);
   if (!fs.statSync(real).isDirectory()) throw new Refusal(`"${t.rel}" is a file, not a folder`);
-  return runSearch([{ dir: real, prefix: `${parts.join("/")}/`, skip: skipper(ex, parts, real) }], query);
+  return [{ dir: real, prefix: `${parts.join("/")}/`, skip: skipper(ex, parts, real) }];
 }
 
 /** A search's folder filter: true for a folder (relative to the searched one) that is excluded. */
