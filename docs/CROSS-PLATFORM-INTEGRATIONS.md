@@ -11,6 +11,7 @@ This keeps Electron and provider-specific SDKs out of the agent tool interface. 
 | Capability | Windows | macOS | Linux |
 | --- | --- | --- | --- |
 | Microsoft mailbox | Graph | Graph | Graph |
+| Gmail mailbox | Gmail API | Gmail API | Gmail API |
 | Calendar | Microsoft Graph and Google Calendar API | Microsoft Graph and Google Calendar API | Microsoft Graph and Google Calendar API |
 | File search | Windows Search and bounded Space search | Spotlight and bounded Space search | Bounded Space search |
 | Native mail app | Running classic Outlook profile | Apple Mail and legacy Outlook with Automation permission | — |
@@ -21,7 +22,7 @@ This keeps Electron and provider-specific SDKs out of the agent tool interface. 
 | Shell import | Optional File Explorer Send to shortcut | Desktop file picker and drag-and-drop | Desktop file picker and drag-and-drop |
 | Window accessibility | Attended Windows UI Automation in Settings | — | — |
 
-Dedicated Gmail and IMAP/SMTP sign-in and macOS and Linux scheduled relaunch remain open.
+IMAP/SMTP sign-in and macOS and Linux scheduled relaunch remain open.
 
 ## Connect Microsoft mail
 
@@ -32,6 +33,12 @@ Dedicated Gmail and IMAP/SMTP sign-in and macOS and Linux scheduled relaunch rem
 5. Use **Reconnect** if authorization expires. **Disconnect** deletes the local token cache and removes the Phaethon space assignments for the connection. Manage tenant-level consent in Microsoft Entra.
 
 For **Classic Outlook for Windows**, open classic Outlook and sign in to the desired profile first. In **Mail & connectors**, enable it, refresh accounts, and assign the account to a space. The adapter uses that account’s delivery store and registered sender. New Outlook does not provide the classic Outlook Object Model. Use Microsoft Graph for Microsoft mail on that client. [Microsoft’s classic and new Outlook comparison](https://support.microsoft.com/en-us/office/feature-comparison-between-new-outlook-and-classic-outlook-de453583-1e76-48bf-975a-2e9cd2ee16dd).
+
+## Connect Gmail
+
+Enable the Gmail API in your Google Cloud project, configure the consent screen, and create a **Desktop app** OAuth client. Add the Gmail account as a test user if the project is in testing mode. In **Settings → Mail & connectors → Gmail**, choose the downloaded client JSON and finish in the browser. Then assign the account to the Spaces that need it. Phaethon stores the client credential and refresh token in the OS keychain. **Enable sending** grants `gmail.send`. **Enable mailbox drafts** grants `gmail.compose` so Phaethon can save a reviewed message in Gmail Drafts. Phaethon’s send action still requires the separate send grant and the existing outbox approval. [Google desktop OAuth](https://developers.google.com/identity/protocols/oauth2/native-app) and [Gmail API scopes](https://developers.google.com/workspace/gmail/api/auth/scopes).
+
+Gmail read and draft scopes are restricted, and sending is sensitive. Public distribution needs Google’s OAuth verification and may need a security assessment if data is stored or transmitted through servers. When an agent in an assigned Space reads a message, the requested content can be sent to the selected model connection. A development OAuth client is intended for its permitted test accounts. No Google client credential ships with this app. [Google’s restricted scope verification requirements](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification).
 
 ## Connect a calendar
 

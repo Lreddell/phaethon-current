@@ -16,6 +16,7 @@ import { accountsFor } from "./access.ts";
 import { draftForBlock } from "./block.ts";
 import { appIcon } from "./app-icons.ts";
 import { cancelGraphSignIn, connectGraph, disconnectGraph, graphAccounts } from "./graph-auth.ts";
+import { gmailAuth } from "./google-auth.ts";
 import { host } from "../host.ts";
 import { IntegrationFailure, type Health } from "../integrations/registry.ts";
 
@@ -39,7 +40,8 @@ async function appsView() {
       health = e instanceof IntegrationFailure ? { state: e.state, reason: e.message } : { state: "offline", reason: "Couldn’t check this mail provider." };
     }
     return { app, label: provider.label, enabled: s.connectors[app] === true, state: health.state,
-      ok: health.state === "ready" || (health.state === "setup" && app !== "outlook-win"), reason: health.reason, data: app === "graph" ? "cloud" : "local" };
+      ok: health.state === "ready" || (health.state === "setup" && app !== "outlook-win"), reason: health.reason,
+      data: app === "graph" || app === "google-mail" ? "cloud" : "local" };
   }));
 }
 
@@ -113,6 +115,27 @@ commands({
       delete s.access[key];
       s.known = s.known.filter((a) => a.key !== key);
       if (!s.known.some((a) => a.app === "graph")) s.connectors.graph = false;
+    });
+  },
+
+  mail_gmail_status: () => ({ desktop: host().available, accounts: gmailAuth.accounts() }),
+  mail_gmail_connect: async (input: { key?: unknown; scope?: unknown; replaceClient?: unknown }, ctx) => {
+    if (!offeredApps().includes("google-mail")) throw new Refusal("Gmail isn’t available in this session.");
+    const account = await gmailAuth.connect({ key: input.key, scope: input.scope, replaceClient: input.replaceClient }, ctx.signal);
+    const accounts = await connector("google-mail").accounts();
+    updateMailSettings((s) => {
+      s.connectors["google-mail"] = true;
+      s.known = [...s.known.filter((a) => a.app !== "google-mail"), ...accounts];
+    });
+    return account;
+  },
+  mail_gmail_cancel: () => gmailAuth.cancel(),
+  mail_gmail_disconnect: async ({ key }: { key: string }) => {
+    await gmailAuth.disconnect(key);
+    updateMailSettings((s) => {
+      delete s.access[key];
+      s.known = s.known.filter((a) => a.key !== key);
+      if (!s.known.some((a) => a.app === "google-mail")) s.connectors["google-mail"] = false;
     });
   },
 

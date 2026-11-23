@@ -201,7 +201,8 @@ export function EmailCard({ space, initial, id, intent }: { space: string; initi
     if (k === said.current) return;
     said.current = k;
     setAnnounce(
-      d.status === "scheduled" ? `Sending in ${Math.round((d.sendAt! - Date.now()) / 1000)} seconds unless you stop it.` : d.status === "sent" ? d.acceptedByProvider ? "Accepted by Microsoft." : "Sent." : d.status === "failed" || d.status === "uncertain" ? d.error ?? "" : "",
+      d.status === "scheduled" ? `Sending in ${Math.round((d.sendAt! - Date.now()) / 1000)} seconds unless you stop it.` : d.status === "sent" ?
+        d.acceptedByProvider ? `Accepted by ${d.account.startsWith("google-mail:") ? "Gmail" : "Microsoft"}.` : "Sent." : d.status === "failed" || d.status === "uncertain" ? d.error ?? "" : "",
     );
   }, [d]);
 
@@ -242,26 +243,28 @@ export function EmailCard({ space, initial, id, intent }: { space: string; initi
   const pause = () => run("pause", () => updateDraft(space, draftId, {}), "Couldn’t pause the send");
 
   const total = d.sendAt !== undefined ? Math.max(1, d.sendAt - d.updated) : 1;
+  const gmail = d.account.startsWith("google-mail:");
+  const cloud = gmail || d.account.startsWith("graph:");
+  const acceptanceProvider = gmail ? "Gmail" : "Microsoft";
   const status =
     d.status === "scheduled"
       ? `Sending in ${mmss(left)}`
       : d.status === "sending"
         ? "Sending…"
         : d.status === "sent"
-          ? d.acceptedByProvider ? "Accepted by Microsoft" : `Sent ${d.sentAt ? clock.format(d.sentAt) : ""}`
+          ? d.acceptedByProvider ? `Accepted by ${acceptanceProvider}` : `Sent ${d.sentAt ? clock.format(d.sentAt) : ""}`
           : d.status === "failed"
             ? "Not sent"
             : d.status === "uncertain"
               ? "Send outcome unknown"
             : d.status === "opened"
-              ? d.account.startsWith("graph:") ? "Saved to mailbox drafts" : "Opened in Mail"
+              ? cloud ? "Saved to mailbox drafts" : "Opened in Mail"
               : d.status === "discarded"
                 ? "Discarded"
                 : intent === "send" || d.intent === "send"
                   ? "Ready to send"
                   : "Draft";
   const account = accounts.find((a) => a.key === d.account);
-  const graph = d.account.startsWith("graph:");
   const fromAddress = /<([^>]+)>/.exec(d.sender)?.[1] ?? d.sender;
 
   if (d.status === "discarded") {
@@ -498,16 +501,16 @@ export function EmailCard({ space, initial, id, intent }: { space: string; initi
             </>
           ) : editable ? (
             <>
-              <Button size="sm" pending={busy === "send"} disabled={!d.to.length || !!busy || (graph && account?.canSend !== true)} onClick={() => void send()} aria-label={d.to.length ? `Send to ${d.to.map((a) => names.get(a) ?? a).join(", ")}` : "Send (add a recipient first)"}>
+              <Button size="sm" pending={busy === "send"} disabled={!d.to.length || !!busy || (cloud && account?.canSend !== true)} onClick={() => void send()} aria-label={d.to.length ? `Send to ${d.to.map((a) => names.get(a) ?? a).join(", ")}` : "Send (add a recipient first)"}>
                 <Icon icon={icons.mailSend} />
                 {d.status === "failed" ? "Try again" : "Send"}
               </Button>
-              {!graph || account?.canOpen ? (
+              {!cloud || account?.canOpen ? (
                 <Button size="sm" variant="ghost" pending={busy === "open"} onClick={() => void run("open", async () => (await flush(), openDraft(space, draftId)), "Couldn’t hand the draft to the provider")}>
-                  {graph ? "Save to mailbox drafts" : "Open in Mail"}
+                  {cloud ? "Save to mailbox drafts" : "Open in Mail"}
                 </Button>
               ) : null}
-              {graph && !account?.canSend && <Button size="sm" variant="link" onClick={() => openSettings("mail")}>Enable sending in Settings</Button>}
+              {cloud && !account?.canSend && <Button size="sm" variant="link" onClick={() => openSettings("mail")}>Enable sending in Settings</Button>}
               {custom === null ? (
                 <Menu>
                   <MenuTrigger render={<Button size="sm" variant="ghost-muted" pending={busy === "review" || busy === "tone"} />}>
@@ -550,7 +553,7 @@ export function EmailCard({ space, initial, id, intent }: { space: string; initi
             </>
           ) : d.status === "sent" ? (
             <span className="px-1 text-muted-foreground text-xs">
-              {d.acceptedByProvider ? "Microsoft accepted the request. Check Sent Items for the message." : `Sent from ${fromAddress} via ${appLabel(d.account.split(":")[0] as Parameters<typeof appLabel>[0])}`}
+              {d.acceptedByProvider ? `${acceptanceProvider} accepted the request. Check the mailbox’s Sent folder for the message.` : `Sent from ${fromAddress} via ${appLabel(d.account.split(":")[0] as Parameters<typeof appLabel>[0])}`}
             </span>
           ) : d.status === "sending" ? (
             <span className="px-1 text-muted-foreground text-xs">Handing it to Mail…</span>

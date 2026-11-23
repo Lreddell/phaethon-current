@@ -97,7 +97,7 @@ export const deletePerson = (id: string) => write("people:", invoke<boolean>("pe
 
 // ---- Mail ---------------------------------------------------------------------
 
-export type MailApp = "apple-mail" | "outlook" | "outlook-win" | "graph" | "fake";
+export type MailApp = "apple-mail" | "outlook" | "outlook-win" | "graph" | "google-mail" | "fake";
 export type MailProvider = "icloud" | "gmail" | "outlook" | "exchange" | "yahoo" | "school" | "other";
 export type MailAccount = { key: string; app: MailApp; name: string; emails: string[]; fullName?: string; provider: MailProvider; enabled: boolean; canSend?: boolean; canOpen?: boolean };
 export type MailSettings = {
@@ -123,6 +123,12 @@ export const graphStatus = () => invoke<{ desktop: boolean; accounts: GraphAccou
 export const connectGraph = (input: { clientId: string } | { key: string; scope: GraphScope }) => write("mail:", invoke<GraphAccount>("mail_graph_connect", input));
 export const cancelGraph = () => invoke<void>("mail_graph_cancel");
 export const disconnectGraph = (key: string) => write("mail:", invoke<void>("mail_graph_disconnect", { key }));
+
+type GmailAccount = { key: string; email: string; scopes: string[] };
+export const gmailStatus = () => invoke<{ desktop: boolean; accounts: GmailAccount[] }>("mail_gmail_status");
+export const connectGmail = (input: { key?: string; scope?: string; replaceClient?: boolean }) => write("mail:", invoke<GmailAccount>("mail_gmail_connect", input));
+export const cancelGmail = () => invoke<void>("mail_gmail_cancel");
+export const disconnectGmail = (key: string) => write("mail:", invoke<void>("mail_gmail_disconnect", { key }));
 export const getShortcuts = (space?: string) => invoke<{ names: string[]; error?: string; allowed: string[] | Record<string, string[]> }>("shortcuts_get", space ? { space } : {});
 export const setAllowedShortcuts = (space: string, names: string[]) => write("mail:shortcuts", invoke<{ allowed: Record<string, string[]> }>("shortcuts_allowed_set", { space, names }));
 

@@ -14,8 +14,12 @@ import { Switch } from "@/components/ui/switch";
 import {
   getShortcuts,
   cancelGraph,
+  cancelGmail,
+  connectGmail,
   connectGraph,
+  disconnectGmail,
   disconnectGraph,
+  gmailStatus,
   graphStatus,
   mailSettings,
   refreshAccounts,
@@ -82,6 +86,41 @@ function GraphConnection({ app, onChanged }: { app: MailAppView; onChanged: () =
       {error || local.error ? <FieldError className="px-3 py-2">{error ?? cleanMessage(local.error)}</FieldError> : null}
     </div>
   );
+}
+
+const sendScope = "https://www.googleapis.com/auth/gmail.send";
+const draftsScope = "https://www.googleapis.com/auth/gmail.compose";
+
+function GmailConnection({ app, onChanged }: { app: MailAppView; onChanged: () => Promise<void> }) {
+  const local = useLoad(gmailStatus, [], "mail:gmail");
+  const [pending, setPending] = useState<"sign-in" | "disconnect" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const change = async (kind: NonNullable<typeof pending>, action: () => Promise<unknown>) => {
+    setPending(kind);
+    setError(null);
+    try { await action(); await Promise.all([local.reload(), onChanged()]); }
+    catch (reason) { setError(cleanMessage(reason)); }
+    finally { setPending(null); }
+  };
+  const connect = (input: Parameters<typeof connectGmail>[0]) => change("sign-in", () => connectGmail(input));
+  return <div>
+    <Row label={<span className="flex items-center gap-3"><AppMark app="google-mail" />Gmail</span>}
+      description={app.reason ?? "Connects directly to your mailbox through the Google Gmail API."} />
+    {local.data?.accounts.map(({ key, email, scopes }) => <Row key={key} label={email} description={`${scopes.includes(sendScope) ? "Read and send" : "Read only"}${scopes.includes(draftsScope) ? " · Save drafts" : ""}`}>
+      <div className="flex flex-wrap justify-end gap-1">
+        <Button size="xs" variant="outline" disabled={!!pending} onClick={() => void connect({ key })}>Reconnect</Button>
+        {!scopes.includes(sendScope) ? <Button size="xs" variant="outline" disabled={!!pending} onClick={() => void connect({ key, scope: sendScope })}>Enable sending</Button> : null}
+        {!scopes.includes(draftsScope) ? <Button size="xs" variant="outline" disabled={!!pending} onClick={() => void connect({ key, scope: draftsScope })}>Enable mailbox drafts</Button> : null}
+        <Button size="xs" variant="ghost" disabled={!!pending} onClick={() => void connect({ key, replaceClient: true })}>Replace client JSON</Button>
+        <Button size="xs" variant="ghost" disabled={!!pending} onClick={() => void change("disconnect", () => disconnectGmail(key))}>Disconnect</Button>
+      </div>
+    </Row>)}
+    {local.data?.desktop ? <Row label="Desktop OAuth client" description="Enable the Gmail API in Google Cloud and download a Desktop app OAuth client JSON. Test projects require a permitted test account.">
+      <Button size="xs" variant="outline" disabled={!!pending} onClick={() => void connect({})}>Choose JSON and connect</Button>
+    </Row> : local.data ? <EmptyRow>Use the desktop app to sign in to Gmail.</EmptyRow> : null}
+    {pending === "sign-in" ? <Row label="Finish signing in in your browser"><Button size="xs" variant="outline" onClick={() => void cancelGmail()}>Cancel</Button></Row> : null}
+    {error || local.error ? <FieldError className="px-3 py-2">{error ?? cleanMessage(local.error)}</FieldError> : null}
+  </div>;
 }
 
 function ConnectorRow({ app, onChanged }: { app: MailAppView; onChanged: () => Promise<void> }) {
@@ -294,7 +333,11 @@ export function MailSection() {
     <>
       <SettingsGroup label="Mail apps" action={<Button size="xs" variant="outline" onClick={() => void state.reload()}>Refresh providers</Button>}>
         <Loader state={state} errorTitle="Couldn’t read the mail settings" skeleton={<SkeletonRows count={2} className="px-3 py-2" />}>
-          {(v) => (v.apps.length ? v.apps.map((a) => a.app === "graph" ? <GraphConnection key={a.app} app={a} onChanged={state.reload} /> : <ConnectorRow key={a.app} app={a} onChanged={state.reload} />) : <EmptyRow>No mail app can be used on this computer.</EmptyRow>)}
+          {(v) => (v.apps.length ? v.apps.map((a) => {
+            if (a.app === "graph") return <GraphConnection key={a.app} app={a} onChanged={state.reload} />;
+            if (a.app === "google-mail") return <GmailConnection key={a.app} app={a} onChanged={state.reload} />;
+            return <ConnectorRow key={a.app} app={a} onChanged={state.reload} />;
+          }) : <EmptyRow>No mail app can be used on this computer.</EmptyRow>)}
         </Loader>
       </SettingsGroup>
 

@@ -185,19 +185,23 @@ export class GoogleDesktopAuth {
       this.tokens.set(id, { token, expires: now + (Math.min(expiry, 3600) - 60) * 1000 });
   }
 
-  async connect(input: { key?: unknown; editing?: unknown; replaceClient?: unknown }, signal: AbortSignal): Promise<GoogleAccount> {
+  async connect(input: { key?: unknown; editing?: unknown; replaceClient?: unknown; scope?: unknown }, signal: AbortSignal): Promise<GoogleAccount> {
     if (!host().available) throw new IntegrationFailure("unsupported", "Google sign-in needs the Phaethon desktop app.");
     if (this.activeSignIn) throw new IntegrationFailure("restricted", "A Google sign-in is already in progress.");
     const vault = vaultId();
     const existing = typeof input.key === "string" ? this.account(vault, input.key) : undefined;
-    if (input.editing === true && !existing) throw new IntegrationFailure("permission", "Connect the account with read access first.");
+    if ((input.editing === true || input.scope !== undefined) && !existing)
+      throw new IntegrationFailure("permission", "Connect the account with read access first.");
+    if (input.scope !== undefined && (typeof input.scope !== "string" || !this.writeScopes.includes(input.scope)))
+      throw new IntegrationFailure("permission", "Choose a supported Google permission in Settings.");
     const controller = new AbortController();
     this.activeSignIn = controller;
     const lifetime = AbortSignal.any([controller.signal, signal, AbortSignal.timeout(180_000)]);
     try {
       const client = existing && input.replaceClient !== true ? this.secret(vault, existing) : await pickClient();
       if (existing && existing.clientId !== client.clientId) throw new IntegrationFailure("setup", "Choose the Desktop OAuth client used for this connection.");
-      const wanted = [...new Set([...this.readScopes, ...(existing?.scopes ?? []), ...(input.editing === true ? this.writeScopes : [])])];
+      const added = typeof input.scope === "string" ? [input.scope] : input.editing === true ? this.writeScopes : [];
+      const wanted = [...new Set([...this.readScopes, ...(existing?.scopes ?? []), ...added])];
       const { code, redirectUri, verifier } = await browserCode(async (redirect, state, challenge) => {
         const url = new URL(googleAuthUrl);
         url.search = new URLSearchParams({

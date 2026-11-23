@@ -8,6 +8,8 @@ import { Outlook } from "./outlook.ts";
 import { WindowsOutlook } from "./outlook-win.ts";
 import { GraphMail } from "./graph.ts";
 import { graphAccounts } from "./graph-auth.ts";
+import { Gmail } from "./gmail.ts";
+import { gmailAuth } from "./google-auth.ts";
 import { Providers } from "../integrations/registry.ts";
 import { isMailApp, type MailAccount, type MailApp, type MailConnector } from "./types.ts";
 
@@ -104,6 +106,7 @@ const built = new Providers<MailApp, MailConnector>()
   .register("outlook", () => new Outlook())
   .register("outlook-win", () => new WindowsOutlook())
   .register("graph", () => new GraphMail())
+  .register("google-mail", () => new Gmail())
   .register("fake", () => {
     const file = fakeMailPath();
     if (!file) throw new Refusal("No test mail.");
@@ -133,8 +136,12 @@ export function appOf(accountKey: string): MailApp {
 
 /** The accounts this space may use (connector on, account assigned to the space). */
 export function accountsFor(space: string, s = readMailSettings()): MailAccount[] {
-  const local = s.connectors.graph ? new Set(graphAccounts().map((a) => a.key)) : new Set<string>();
-  return s.known.filter((a) => s.connectors[a.app] === true && (s.access[a.key] ?? []).includes(space) && (a.app !== "graph" || local.has(a.key)));
+  const local = new Set([
+    ...(s.connectors.graph ? graphAccounts() : []),
+    ...(s.connectors["google-mail"] ? gmailAuth.accounts() : []),
+  ].map((a) => a.key));
+  return s.known.filter((a) => s.connectors[a.app] === true && (s.access[a.key] ?? []).includes(space) &&
+    ((a.app !== "graph" && a.app !== "google-mail") || local.has(a.key)));
 }
 
 export function mailEnabledFor(space: string): boolean {

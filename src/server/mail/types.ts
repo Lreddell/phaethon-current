@@ -7,7 +7,7 @@
 
 import type { Health } from "../integrations/registry.ts";
 
-export const MAIL_APPS = ["apple-mail", "outlook", "outlook-win", "graph", "fake"] as const;
+export const MAIL_APPS = ["apple-mail", "outlook", "outlook-win", "graph", "google-mail", "fake"] as const;
 export type MailApp = (typeof MAIL_APPS)[number];
 export const isMailApp = (id: unknown): id is MailApp => MAIL_APPS.some((app) => app === id);
 export class SendOutcomeUnknown extends Error {}

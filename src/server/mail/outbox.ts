@@ -290,7 +290,8 @@ async function deliver(d: Draft): Promise<Draft> {
   }
   const sent = save({ ...readDraft(d.space, d.id), status: "sent", sendAt: undefined, sentAt: Date.now(), error: undefined, note: undefined, ...(accepted ? { acceptedByProvider: true } : {}) });
   if (accepted) {
-    notifyLater({ kind: "mail", title: `Accepted by Microsoft: ${sent.subject || "(no subject)"}`, body: "Check Sent Items for the message.", whenAway: true, target: { kind: "space", space: sent.space } });
+    const provider = appOf(sent.account) === "google-mail" ? "Gmail" : "Microsoft";
+    notifyLater({ kind: "mail", title: `Accepted by ${provider} · ${sent.subject || "(no subject)"}`, body: "Check the mailbox’s Sent folder for the message.", whenAway: true, target: { kind: "space", space: sent.space } });
     return sent;
   }
   const added = await recordSent(sent);
@@ -453,8 +454,11 @@ export async function openDraft(space: string, id: string): Promise<Draft> {
   opening.add(openKey);
   try {
     if (d.status === "scheduled") stopSend(space, id);
-    await connector(appOf(d.account)).open(outgoing(d));
-    return save({ ...readDraft(space, id), status: "opened", sendAt: undefined, note: appOf(d.account) === "graph" ? "Saved to the Microsoft mailbox’s Drafts folder." : "Opened in Mail to finish there." });
+    const app = appOf(d.account);
+    await connector(app).open(outgoing(d));
+    const note = app === "graph" ? "Saved to the Microsoft mailbox’s Drafts folder." :
+      app === "google-mail" ? "Saved to the Gmail Drafts folder." : "Opened in Mail to finish there.";
+    return save({ ...readDraft(space, id), status: "opened", sendAt: undefined, note });
   } finally {
     opening.delete(openKey);
   }
