@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Refusal } from "../../rpc/registry.ts";
-import { byteLength } from "../../core/fsx.ts";
+import { byteLength, isWithin, realpath } from "../../core/fsx.ts";
 
 /**
  * `search_files`: one word matches literal lines; several words match a window
@@ -157,14 +157,19 @@ function scanText(rel: string, text: string, q: Query, budget: Budget, hits: Hit
   }
 }
 
-function walk(root: Root, q: Query, budget: Budget, hits: Hit[]): void {
+function walk(root: Root, budget: Budget, visit: (abs: string, rel: string) => void, maxFileSize = MAX_SEARCH_FILE): void {
   // Depth first; children sorted by path and pushed in reverse so they pop in ascending order.
   type Entry = { abs: string; rel: string; depth: number; dir: boolean };
   const stack: Entry[] = [{ abs: root.dir, rel: "", depth: 0, dir: true }];
   while (stack.length && !budget.stopped) {
+    if (Date.now() - budget.started > SEARCH_TIMEOUT_MS) {
+      budget.notes.add("3-second scan budget");
+      budget.stopped = true;
+      break;
+    }
     const entry = stack.pop()!;
     if (!entry.dir) {
-      scanFile(root, entry.abs, entry.rel, q, budget, hits);
+      visit(entry.abs, entry.rel);
       continue;
     }
     let names: string[];
@@ -175,6 +180,11 @@ function walk(root: Root, q: Query, budget: Budget, hits: Hit[]): void {
     }
     const children: Entry[] = [];
     for (const name of names) {
+      if (budget.entries % 128 === 0 && Date.now() - budget.started > SEARCH_TIMEOUT_MS) {
+        budget.notes.add("3-second scan budget");
+        budget.stopped = true;
+        break;
+      }
       if (budget.entries >= MAX_SEARCH_ENTRIES) {
         budget.notes.add("20,000-entry discovery budget");
         break;
@@ -191,17 +201,35 @@ function walk(root: Root, q: Query, budget: Budget, hits: Hit[]): void {
       if (root.allow && name.startsWith(".")) continue;
       const rel = entry.rel ? `${entry.rel}/${name}` : name;
       if (st.isDirectory()) {
-        if (name === ".phaethon") continue;
+        if (name.toLowerCase() === ".phaethon") continue;
         if (entry.depth === 0 && root.skipRootCourses && name.toLowerCase() === "courses") continue;
         if (root.skip?.(rel)) continue;
         children.push({ abs, rel, depth: entry.depth + 1, dir: true });
-      } else if (st.isFile() && st.size <= MAX_SEARCH_FILE) {
+      } else if (st.isFile() && st.size <= maxFileSize) {
         children.push({ abs, rel, depth: entry.depth + 1, dir: false });
       }
     }
     children.sort((a, b) => (a.abs < b.abs ? -1 : a.abs > b.abs ? 1 : 0));
     for (const c of children.reverse()) stack.push(c);
   }
+}
+
+export function walkFileNames(roots: Root[], visit: (root: Root, file: string, relative: string) => boolean): boolean {
+  const budget = new Budget();
+  for (const root of canonicalRoots(roots)) {
+    if (budget.stopped) break;
+    walk(root, budget, (file, relative) => {
+      if (Date.now() - budget.started > SEARCH_TIMEOUT_MS || !visit(root, file, relative)) budget.stopped = true;
+    }, Infinity);
+  }
+  return budget.stopped || budget.notes.size > 0;
+}
+
+function canonicalRoots(roots: Root[]): Root[] {
+  return roots.flatMap((root) => {
+    try { return [{ ...root, dir: realpath(root.dir) }]; }
+    catch { return []; }
+  });
 }
 
 function scanFile(root: Root, abs: string, rel: string, q: Query, budget: Budget, hits: Hit[]): void {
@@ -223,7 +251,10 @@ function scanFile(root: Root, abs: string, rel: string, q: Query, budget: Budget
   }
   let size: number;
   try {
-    size = fs.statSync(real).size;
+    if (path.relative(root.dir, realpath(root.dir)) || !isWithin(realpath(real), root.dir)) return;
+    const stat = fs.lstatSync(real);
+    if (!stat.isFile()) return;
+    size = stat.size;
   } catch {
     return;
   }
@@ -236,7 +267,8 @@ function scanFile(root: Root, abs: string, rel: string, q: Query, budget: Budget
   budget.files++;
   let buf: Buffer;
   try {
-    const fd = fs.openSync(real, "r");
+    const noFollow = process.platform === "win32" ? 0 : (fs.constants.O_NOFOLLOW ?? 0);
+    const fd = fs.openSync(real, fs.constants.O_RDONLY | noFollow);
     try {
       const want = Math.min(MAX_SEARCH_FILE + 1, remaining + 1, size);
       buf = Buffer.alloc(want);
@@ -265,9 +297,9 @@ export function search(roots: Root[], rawQuery: string): string {
   const q = parseQuery(rawQuery);
   const budget = new Budget();
   const hits: Hit[] = [];
-  for (const root of roots) {
+  for (const root of canonicalRoots(roots)) {
     if (budget.stopped) break;
-    walk(root, q, budget, hits);
+    walk(root, budget, (abs, rel) => scanFile(root, abs, rel, q, budget, hits));
   }
   hits.sort((a, b) => b.score - a.score || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0) || a.line - b.line);
   const total = hits.length;

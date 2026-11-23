@@ -51,11 +51,11 @@ commands({
   },
 
   /** Files and folders anywhere in the space whose name contains `query`. */
-  files_find: ({ space, query }: { space: string; query: string }) => {
+  files_find: ({ space, query }: { space: string; query: string }, ctx) => {
     const s = readFilesSettings(space);
     const q = String(query ?? "").trim();
     if (!q) return { entries: [], truncated: false };
-    return walkSpace(spaceDir(space), { query: q, showHidden: s.showHidden, limit: 300, excluded: s.excluded });
+    return walkSpace(spaceDir(space), { query: q, showHidden: s.showHidden, limit: 300, excluded: s.excluded, signal: ctx.signal });
   },
 
   /** The space's most recently changed files. */

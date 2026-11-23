@@ -31,10 +31,12 @@ import {
   type JobView,
   type Schedule,
 } from "@/features/life/api";
-import { relativeTime } from "@/lib/platform";
+import { platform, relativeTime } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog, EmptyRow, Loader, SettingsGroup, Status, useLoad, type Loaded } from "../ui";
 import { SpaceSelect, SpacesPicker, spaceName, untilText, useSpaceList, type SpaceLite } from "./shared";
+import { WorkflowsGroup } from "./WorkflowsGroup";
+import { DesktopFlowsGroup } from "./DesktopFlowsGroup";
 
 /**
  * Settings › Automations: Phaethon's background jobs (each says why it's idle
@@ -496,6 +498,8 @@ export function AutomationsSection() {
     <>
       <JobsGroup jobs={jobs} spaces={spaces} running={running} mark={mark} />
       <SchedulesGroup jobs={jobs} spaces={spaces} running={running} mark={mark} />
+      <WorkflowsGroup />
+      {platform() === "win32" ? <DesktopFlowsGroup /> : null}
     </>
   );
 }

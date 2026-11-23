@@ -5,7 +5,12 @@
  * third-party app sign into still works.
  */
 
-export type MailApp = "apple-mail" | "outlook" | "fake";
+import type { Health } from "../integrations/registry.ts";
+
+export const MAIL_APPS = ["apple-mail", "outlook", "outlook-win", "graph", "google-mail", "fake"] as const;
+export type MailApp = (typeof MAIL_APPS)[number];
+export const isMailApp = (id: unknown): id is MailApp => MAIL_APPS.some((app) => app === id);
+export class SendOutcomeUnknown extends Error {}
 
 /** A guess from the account's type and addresses, for the mark shown beside it. */
 export type MailProvider = "icloud" | "gmail" | "outlook" | "exchange" | "yahoo" | "school" | "other";
@@ -19,6 +24,8 @@ export type MailAccount = {
   fullName?: string;
   provider: MailProvider;
   enabled: boolean;
+  canSend?: boolean;
+  canOpen?: boolean;
 };
 
 export type MailSummary = {
@@ -68,12 +75,13 @@ export interface MailConnector {
   readonly label: string;
   /** Whether it can be used on this computer at all (installed, right platform). */
   available(): Promise<{ ok: boolean; reason?: string }>;
+  health?(): Promise<Health>;
   accounts(): Promise<MailAccount[]>;
-  list(q: MailQuery): Promise<MailSummary[]>;
-  read(ref: string): Promise<MailMessage>;
-  send(m: Outgoing): Promise<void>;
+  list(q: MailQuery, signal?: AbortSignal): Promise<MailSummary[]>;
+  read(ref: string, signal?: AbortSignal): Promise<MailMessage>;
+  send(m: Outgoing, signal?: AbortSignal): Promise<void | { accepted: true }>;
   /** Opens a compose window filled in, for the person to finish in the app. */
-  open(m: Outgoing): Promise<void>;
+  open(m: Outgoing, signal?: AbortSignal): Promise<void>;
 }
 
 const SCHOOL = /\.(edu|ac\.[a-z]{2}|edu\.[a-z]{2})$/i;
@@ -99,13 +107,14 @@ export function encodeRef(r: { app: MailApp; account: string; mailbox: string; i
 export function decodeRef(ref: string): { app: MailApp; account: string; mailbox: string; id: string } {
   let v: unknown;
   try {
+    if (typeof ref !== "string" || ref.length > 8192) throw new Error();
     v = JSON.parse(Buffer.from(ref, "base64url").toString("utf8"));
   } catch {
     throw new Error("That isn’t a message reference from mail_search.");
   }
   if (!Array.isArray(v) || v.length !== 4 || !v.every((x) => typeof x === "string")) throw new Error("That isn’t a message reference from mail_search.");
   const [app, account, mailbox, id] = v as string[];
-  if (app !== "apple-mail" && app !== "outlook" && app !== "fake") throw new Error("That isn’t a message reference from mail_search.");
+  if (!isMailApp(app)) throw new Error("That isn’t a message reference from mail_search.");
   return { app, account: account!, mailbox: mailbox!, id: id! };
 }
 

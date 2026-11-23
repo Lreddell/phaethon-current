@@ -97,9 +97,9 @@ export const deletePerson = (id: string) => write("people:", invoke<boolean>("pe
 
 // ---- Mail ---------------------------------------------------------------------
 
-export type MailApp = "apple-mail" | "outlook" | "fake";
+export type MailApp = "apple-mail" | "outlook" | "outlook-win" | "graph" | "google-mail" | "fake";
 export type MailProvider = "icloud" | "gmail" | "outlook" | "exchange" | "yahoo" | "school" | "other";
-export type MailAccount = { key: string; app: MailApp; name: string; emails: string[]; fullName?: string; provider: MailProvider; enabled: boolean };
+export type MailAccount = { key: string; app: MailApp; name: string; emails: string[]; fullName?: string; provider: MailProvider; enabled: boolean; canSend?: boolean; canOpen?: boolean };
 export type MailSettings = {
   connectors: Partial<Record<MailApp, boolean>>;
   access: Record<string, string[]>;
@@ -109,7 +109,7 @@ export type MailSettings = {
   indexForPeople: boolean;
   addPeopleFromMail: boolean;
 };
-export type MailAppView = { app: MailApp; label: string; enabled: boolean; ok: boolean; reason?: string };
+export type MailAppView = { app: MailApp; label: string; enabled: boolean; ok: boolean; state?: string; reason?: string };
 export type MailView = { settings: MailSettings; apps: MailAppView[]; delays: number[]; spaces: string[] };
 
 export const mailSettings = () => invoke<MailView>("mail_settings_get");
@@ -117,10 +117,22 @@ export const setMailSettings = (patch: Partial<Pick<MailSettings, "allowSend" | 
 export const setConnector = (app: MailApp, enabled: boolean) => write("mail:", invoke<{ accounts: MailAccount[]; errors: { app: MailApp; message: string }[] }>("mail_connector_set", { app, enabled }));
 export const refreshAccounts = () => write("mail:", invoke<{ accounts: MailAccount[]; errors: { app: MailApp; message: string }[] }>("mail_accounts_refresh"));
 export const setAccountSpaces = (account: string, spaces: string[]) => write("mail:", invoke<MailSettings>("mail_access_set", { account, spaces }));
+type GraphScope = "Mail.Read" | "Mail.Send" | "Mail.ReadWrite";
+type GraphAccount = { key: string; name: string; email: string; scopes: GraphScope[] };
+export const graphStatus = () => invoke<{ desktop: boolean; accounts: GraphAccount[] }>("mail_graph_status");
+export const connectGraph = (input: { clientId: string } | { key: string; scope: GraphScope }) => write("mail:", invoke<GraphAccount>("mail_graph_connect", input));
+export const cancelGraph = () => invoke<void>("mail_graph_cancel");
+export const disconnectGraph = (key: string) => write("mail:", invoke<void>("mail_graph_disconnect", { key }));
+
+type GmailAccount = { key: string; email: string; scopes: string[] };
+export const gmailStatus = () => invoke<{ desktop: boolean; accounts: GmailAccount[] }>("mail_gmail_status");
+export const connectGmail = (input: { key?: string; scope?: string; replaceClient?: boolean }) => write("mail:", invoke<GmailAccount>("mail_gmail_connect", input));
+export const cancelGmail = () => invoke<void>("mail_gmail_cancel");
+export const disconnectGmail = (key: string) => write("mail:", invoke<void>("mail_gmail_disconnect", { key }));
 export const getShortcuts = (space?: string) => invoke<{ names: string[]; error?: string; allowed: string[] | Record<string, string[]> }>("shortcuts_get", space ? { space } : {});
 export const setAllowedShortcuts = (space: string, names: string[]) => write("mail:shortcuts", invoke<{ allowed: Record<string, string[]> }>("shortcuts_allowed_set", { space, names }));
 
-export type DraftStatus = "draft" | "scheduled" | "sending" | "sent" | "opened" | "discarded" | "failed";
+export type DraftStatus = "draft" | "scheduled" | "sending" | "sent" | "opened" | "discarded" | "failed" | "uncertain";
 export type Draft = {
   id: string;
   space: string;
@@ -139,6 +151,7 @@ export type Draft = {
   status: DraftStatus;
   sendAt?: number;
   sentAt?: number;
+  acceptedByProvider?: boolean;
   created: number;
   updated: number;
   note?: string;
@@ -156,7 +169,7 @@ export const getDraft = (space: string, id: string) => invoke<Draft>("mail_draft
 export const draftForBlock = (space: string, code: string, thread?: string) => invoke<Draft>("mail_draft_for_block", { space, code, ...(thread ? { thread } : {}) });
 export const accountsFor = (space: string) => invoke<MailAccount[]>("mail_accounts_for", { space });
 export const updateDraft = (space: string, id: string, patch: DraftPatch) => invoke<Draft>("mail_draft_update", { space, id, patch });
-export const sendDraft = (space: string, id: string, now = false) => invoke<Draft>("mail_draft_send", { space, id, now });
+export const sendDraft = (space: string, id: string, revision: number, now = false) => invoke<Draft>("mail_draft_send", { space, id, revision, now });
 export const stopDraft = (space: string, id: string) => invoke<Draft>("mail_draft_stop", { space, id });
 export const discardDraft = (space: string, id: string) => invoke<Draft>("mail_draft_discard", { space, id });
 export const openDraft = (space: string, id: string) => invoke<Draft>("mail_draft_open", { space, id });

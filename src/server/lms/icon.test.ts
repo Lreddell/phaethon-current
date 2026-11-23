@@ -51,6 +51,20 @@ describe("a course site's icon", () => {
     expect(await fetchSiteIcon(origin, async () => new Response("x", { status: 500 }))).toBeNull();
   });
 
+  it("follows same-site artwork redirects and ignores redirects to other origins", async () => {
+    const requests: string[] = [];
+    const dataUrl = await fetchSiteIcon(origin, async (url, init) => {
+      requests.push(url.pathname);
+      expect(init.redirect).toBe("manual");
+      expect(url.origin).toBe(origin.origin);
+      if (url.pathname === "/apple-touch-icon.png") return Response.redirect("https://elsewhere.example/favicon.png");
+      if (url.pathname === "/apple-touch-icon-precomposed.png") return Response.redirect(new URL("/brand.png", origin));
+      return new Response(PNG, { headers: { "content-type": "image/png" } });
+    });
+    expect(dataUrl).toBe(`data:image/png;base64,${PNG.toString("base64")}`);
+    expect(requests).toEqual(["/apple-touch-icon.png", "/apple-touch-icon-precomposed.png", "/brand.png"]);
+  });
+
   it("remembers a connection's icon for a week, misses too", async () => {
     save(vaultRoot(), {
       connections: [

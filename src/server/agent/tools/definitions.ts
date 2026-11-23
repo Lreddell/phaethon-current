@@ -52,12 +52,13 @@ export const BASE_TOOLS: ToolDef[] = [
   {
     name: "search_files",
     description:
-      'Search text files up to 2 MiB, including imported OCR text. One word matches literal lines; multiple words match across nearby lines and their heading, ranked by relevance. Returns path:line: text, with an explicit notice if scan or output limits are reached. Narrow path/query to continue. With path "@<space>/<folder>" it searches a granted folder of another space instead.',
+      'Search file contents up to 2 MiB, including imported OCR text. Content matches return paths, line numbers and excerpts. Use mode "name" to find files by filename and return their size and last modification time. With path "@<space>/<folder>", both modes search only the granted folder. Narrow the path or query when search limits are reached.',
     eager_input_streaming: true,
     input_schema: {
       type: "object",
       properties: {
         query: { type: "string", description: "Text to look for." },
+        mode: { type: "string", enum: ["content", "name"], description: "Search contents by default, or search filenames." },
         path: { type: "string", description: 'Folder to search, relative to the space root. Omit for the whole space. "@<space>/<folder>" for a granted folder of another space.' },
       },
       required: ["query"],

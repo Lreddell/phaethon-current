@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { randomBytes } from "node:crypto";
+import { tmpdir } from "node:os";
+import { createHash, randomBytes } from "node:crypto";
 import { isNotFound, readJson, writeJsonAtomic } from "../core/fsx.ts";
 import { spaceDir } from "../core/vault.ts";
 import { Refusal, messageOf } from "../rpc/registry.ts";
@@ -8,8 +9,9 @@ import { log } from "../log.ts";
 import { notifyLater } from "../background/background.ts";
 import { findByEmail, logInteraction, newPerson } from "../people/people.ts";
 import { resolveLocal } from "../agent/tools/files.ts";
+import { authorizeIntegration } from "../integrations/policy.ts";
 import { accountsFor, appOf, connector, readMailSettings, resolveAccount, senderFor } from "./access.ts";
-import { addressOf, isAddress, nameOf, type MailProvider, type Outgoing } from "./types.ts";
+import { addressOf, isAddress, nameOf, SendOutcomeUnknown, type MailProvider, type Outgoing } from "./types.ts";
 
 /**
  * Drafts and their sending, one file each in `<space>/.phaethon/outbox/`.
@@ -19,7 +21,7 @@ import { addressOf, isAddress, nameOf, type MailProvider, type Outgoing } from "
  * now. A send whose time passed while Phaethon was closed goes back to draft.
  */
 
-export type DraftStatus = "draft" | "scheduled" | "sending" | "sent" | "opened" | "discarded" | "failed";
+export type DraftStatus = "draft" | "scheduled" | "sending" | "sent" | "opened" | "discarded" | "failed" | "uncertain";
 
 export type Review = { tone: string; summary: string; issues: string[]; at: number };
 
@@ -41,6 +43,10 @@ export type Draft = {
   intent: "draft" | "send";
   status: DraftStatus;
   sendAt?: number;
+  /** Recorded only by the user-facing send command. Older countdowns lack it. */
+  approvedAt?: number;
+  approvedAttachments?: string[];
+  acceptedByProvider?: boolean;
   sentAt?: number;
   created: number;
   updated: number;
@@ -93,7 +99,7 @@ export function readDraft(space: string, id: string): Draft {
 }
 
 function save(d: Draft): Draft {
-  d.updated = Date.now();
+  d.updated = Math.max(Date.now(), d.updated + 1);
   writeJsonAtomic(fileOf(d.space, d.id), d, { newline: true });
   for (const l of listeners) l(d);
   return d;
@@ -192,7 +198,7 @@ function disarm(space: string, id: string): void {
 
 function arm(d: Draft): void {
   disarm(d.space, d.id);
-  if (d.status !== "scheduled" || d.sendAt === undefined) return;
+  if (d.status !== "scheduled" || d.sendAt === undefined || d.approvedAt === undefined) return;
   const t = setTimeout(() => void fire(d.space, d.id), Math.max(0, d.sendAt - Date.now()));
   t.unref?.();
   timers.set(key(d.space, d.id), t);
@@ -208,6 +214,7 @@ async function fire(space: string, id: string): Promise<void> {
   }
   // Changed since it was armed (stopped, edited, rescheduled): the newer state wins.
   if (d.status !== "scheduled" || d.sendAt === undefined) return;
+  if (d.approvedAt === undefined) return;
   if (d.sendAt > Date.now() + 250) return arm(d);
   await deliver(d);
 }
@@ -224,21 +231,69 @@ function outgoing(d: Draft): Outgoing {
   return { account: d.account, sender: d.sender, to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject, body: d.body, ...(d.replyTo ? { replyTo: d.replyTo } : {}), ...(attachments.length ? { attachments } : {}) };
 }
 
+function attachmentDigests(paths: string[] = [], snapshot?: string): string[] {
+  let remaining = MAX_ATTACHMENT_BYTES;
+  return paths.map((file, index) => {
+    const fd = fs.openSync(file, "r");
+    try {
+      const stat = fs.fstatSync(fd);
+      if (!stat.isFile() || stat.size > remaining) throw new Refusal("An attachment became too large. Review the draft again.");
+      const bytes = Buffer.alloc(stat.size);
+      if (fs.readSync(fd, bytes) !== stat.size || fs.fstatSync(fd).size !== stat.size) throw new Refusal("An attachment changed while it was being read.");
+      remaining -= stat.size;
+      if (snapshot) {
+        const destination = path.join(snapshot, String(index));
+        fs.mkdirSync(destination, { mode: 0o700 });
+        fs.writeFileSync(path.join(destination, path.basename(file)), bytes, { mode: 0o600, flag: "wx" });
+      }
+      return createHash("sha256").update(bytes).digest("hex");
+    } finally {
+      fs.closeSync(fd);
+    }
+  });
+}
+
 async function deliver(d: Draft): Promise<Draft> {
   // The account must still be assigned to this space at the moment of sending.
-  if (!accountsFor(d.space).some((a) => a.key === d.account)) {
+  const account = accountsFor(d.space).find((a) => a.key === d.account);
+  if (!account) {
     return save({ ...d, status: "failed", sendAt: undefined, error: "That account is no longer set up for this space, so the message wasn’t sent." });
   }
   if (!readMailSettings().allowSend) return save({ ...d, status: "draft", sendAt: undefined, note: "Sending is turned off in Settings › Mail, so it wasn’t sent." });
+  if (account.canSend === false) return save({ ...d, status: "failed", sendAt: undefined, error: "Enable sending for this account in Settings." });
+  let accepted = false;
+  let snapshot: string | undefined;
   save({ ...d, status: "sending", error: undefined });
   try {
-    await connector(appOf(d.account)).send(outgoing(d));
+    const message = outgoing(d);
+    if (message.attachments?.length) snapshot = fs.mkdtempSync(path.join(tmpdir(), "phaethon-mail-send-"));
+    const hashes = attachmentDigests(message.attachments, snapshot);
+    if (JSON.stringify(hashes) !== JSON.stringify(d.approvedAttachments ?? [])) throw new Refusal("An attachment changed after approval. Review the draft and send it again.");
+    if (snapshot && message.attachments) {
+      const directory = snapshot;
+      message.attachments = message.attachments.map((file, index) => path.join(directory, String(index), path.basename(file)));
+    }
+    accepted = (await connector(appOf(d.account)).send(message))?.accepted === true;
   } catch (e) {
     log.warn("mail send failed", { error: messageOf(e) });
-    notifyLater({ kind: "mail", title: `Not sent: ${d.subject || "(no subject)"}`, body: messageOf(e).slice(0, 200), target: d.thread ? { kind: "thread", space: d.space, thread: d.thread } : { kind: "space", space: d.space } });
-    return save({ ...readDraft(d.space, d.id), status: "failed", sendAt: undefined, error: messageOf(e) });
+    const uncertain = e instanceof SendOutcomeUnknown;
+    notifyLater({ kind: "mail", title: `${uncertain ? "Send outcome unknown" : "Not sent"}: ${d.subject || "(no subject)"}`, body: messageOf(e).slice(0, 200), target: d.thread ? { kind: "thread", space: d.space, thread: d.thread } : { kind: "space", space: d.space } });
+    return save({ ...readDraft(d.space, d.id), status: uncertain ? "uncertain" : "failed", sendAt: undefined, error: messageOf(e) });
+  } finally {
+    if (snapshot) {
+      try {
+        fs.rmSync(snapshot, { recursive: true, force: true });
+      } catch {
+        log.warn("could not remove mail attachment snapshot");
+      }
+    }
   }
-  const sent = save({ ...readDraft(d.space, d.id), status: "sent", sendAt: undefined, sentAt: Date.now(), error: undefined, note: undefined });
+  const sent = save({ ...readDraft(d.space, d.id), status: "sent", sendAt: undefined, sentAt: Date.now(), error: undefined, note: undefined, ...(accepted ? { acceptedByProvider: true } : {}) });
+  if (accepted) {
+    const provider = appOf(sent.account) === "google-mail" ? "Gmail" : "Microsoft";
+    notifyLater({ kind: "mail", title: `Accepted by ${provider} · ${sent.subject || "(no subject)"}`, body: "Check the mailbox’s Sent folder for the message.", whenAway: true, target: { kind: "space", space: sent.space } });
+    return sent;
+  }
   const added = await recordSent(sent);
   notifyLater({ kind: "mail", title: `Sent: ${sent.subject || "(no subject)"}`, body: `To ${sent.to.join(", ")}${added.length ? ` · added ${added.join(" and ")} to People` : ""}`, whenAway: true, target: sent.thread ? { kind: "thread", space: sent.space, thread: sent.thread } : { kind: "space", space: sent.space } });
   return added.length ? save({ ...readDraft(d.space, d.id), note: `Added ${added.join(" and ")} to People.` }) : sent;
@@ -284,8 +339,7 @@ async function recordSent(d: Draft): Promise<string[]> {
 // ---- Operations ---------------------------------------------------------------
 
 /**
- * A new draft from the agent. With intent "send" (and sending allowed, and a
- * person there to see it) it is scheduled after the configured delay.
+ * A new draft from the agent. The send intent highlights the approval action.
  */
 export function createDraft(space: string, f: DraftFields, opts: { intent: "draft" | "send"; thread?: string; unattended?: boolean; key?: string; missing?: string[]; names?: Record<string, string> }): Draft {
   const account = resolveAccount(space, f.account);
@@ -295,7 +349,6 @@ export function createDraft(space: string, f: DraftFields, opts: { intent: "draf
   const now = Date.now();
   const id = `d_${now.toString(36)}${randomBytes(4).toString("hex")}`;
   const addressed = fields.to.length > 0 || !!f.replyTo;
-  const canSend = opts.intent === "send" && settings.allowSend && !opts.unattended && addressed;
   const d: Draft = {
     id,
     space,
@@ -307,12 +360,11 @@ export function createDraft(space: string, f: DraftFields, opts: { intent: "draf
     ...fields,
     ...(f.replyTo ? { replyTo: f.replyTo } : {}),
     intent: opts.intent,
-    status: canSend ? "scheduled" : "draft",
-    ...(canSend ? { sendAt: now + settings.sendDelaySeconds * 1000 } : {}),
+    status: "draft",
     created: now,
     updated: now,
-    ...(opts.intent === "send" && !canSend
-      ? { note: opts.unattended ? "Written while you were away, so it waits for you." : !addressed ? "Add who it goes to, then send." : "Sending is turned off in Settings › Mail." }
+    ...(opts.intent === "send"
+      ? { note: opts.unattended ? "Written while you were away, so it waits for you." : !addressed ? "Add who it goes to, then send." : !settings.allowSend ? "Sending is turned off in Settings › Mail." : "Review this draft and press Send when it’s ready." }
       : {}),
     ...(attachments.length ? { attachments } : {}),
     ...(opts.key ? { key: opts.key } : {}),
@@ -323,11 +375,11 @@ export function createDraft(space: string, f: DraftFields, opts: { intent: "draf
     })(),
   };
   save(d);
-  arm(d);
   return d;
 }
 
-const editable = (d: Draft) => d.status === "draft" || d.status === "scheduled" || d.status === "failed" || d.status === "opened";
+const opening = new Set<string>();
+const editable = (d: Draft) => !opening.has(key(d.space, d.id)) && (d.status === "draft" || d.status === "scheduled" || d.status === "failed" || d.status === "opened");
 
 /** Changes fields; a scheduled send stops so nothing goes out that the person hasn't seen. */
 export function updateDraft(space: string, id: string, patch: Partial<DraftFields>): Draft {
@@ -352,14 +404,23 @@ export function updateDraft(space: string, id: string, patch: Partial<DraftField
 }
 
 /** Starts (or restarts) the countdown; 0 sends now. */
-export async function sendDraft(space: string, id: string, delaySeconds: number): Promise<Draft> {
+export async function sendDraft(space: string, id: string, delaySeconds: number, expectedRevision?: number): Promise<Draft> {
   const d = readDraft(space, id);
   if (!editable(d)) throw new Refusal(d.status === "sent" ? "That message was already sent." : "That draft can’t be sent now.");
   if (!readMailSettings().allowSend) throw new Refusal("Sending is turned off in Settings › Mail.");
+  authorizeIntegration("send", "user", true);
+  if (expectedRevision !== undefined && d.updated !== expectedRevision) throw new Refusal("The draft changed. Review it again before sending.");
   if (!d.to.length && !d.replyTo) throw new Refusal("Add a recipient first.");
   disarm(space, id);
-  if (delaySeconds <= 0) return deliver(d);
-  const next = save({ ...d, status: "scheduled", sendAt: Date.now() + Math.min(delaySeconds, 600) * 1000, note: undefined, error: undefined });
+  let approvedAttachments: string[] | undefined;
+  try {
+    approvedAttachments = d.status === "scheduled" ? d.approvedAttachments : attachmentDigests(outgoing(d).attachments);
+  } catch (e) {
+    return save({ ...d, status: "failed", sendAt: undefined, error: messageOf(e) });
+  }
+  const approved = { ...d, approvedAt: Date.now(), approvedAttachments };
+  if (delaySeconds <= 0) return deliver(approved);
+  const next = save({ ...approved, status: "scheduled", sendAt: Date.now() + Math.min(delaySeconds, 600) * 1000, note: undefined, error: undefined });
   arm(next);
   return next;
 }
@@ -378,18 +439,29 @@ export function stopSend(space: string, id: string): Draft {
 
 export function discardDraft(space: string, id: string): Draft {
   const d = readDraft(space, id);
-  if (d.status === "sent" || d.status === "sending") throw new Refusal("That message was already sent.");
+  if (opening.has(key(space, id))) throw new Refusal("Wait for the draft to open before discarding it.");
+  if (d.status === "sent" || d.status === "sending" || d.status === "uncertain") throw new Refusal("This draft already has a send attempt.");
   disarm(space, id);
   return save({ ...d, status: "discarded", sendAt: undefined });
 }
 
 export async function openDraft(space: string, id: string): Promise<Draft> {
   const d = readDraft(space, id);
-  if (d.status === "sent" || d.status === "sending") throw new Refusal("That message was already sent.");
-  if (!accountsFor(space).some((a) => a.key === d.account)) throw new Refusal("That account is no longer set up for this space.");
-  disarm(space, id);
-  await connector(appOf(d.account)).open(outgoing(d));
-  return save({ ...readDraft(space, id), status: "opened", sendAt: undefined, note: "Opened in Mail to finish there." });
+  if (!editable(d)) throw new Refusal("That draft can’t be opened now.");
+  const account = accountsFor(space).find((a) => a.key === d.account);
+  authorizeIntegration("modify", "user", !!account && account.canOpen !== false);
+  const openKey = key(space, id);
+  opening.add(openKey);
+  try {
+    if (d.status === "scheduled") stopSend(space, id);
+    const app = appOf(d.account);
+    await connector(app).open(outgoing(d));
+    const note = app === "graph" ? "Saved to the Microsoft mailbox’s Drafts folder." :
+      app === "google-mail" ? "Saved to the Gmail Drafts folder." : "Opened in Mail to finish there.";
+    return save({ ...readDraft(space, id), status: "opened", sendAt: undefined, note });
+  } finally {
+    opening.delete(openKey);
+  }
 }
 
 export function setReview(space: string, id: string, review: Review): Draft {
@@ -414,10 +486,13 @@ export function recoverOutbox(spaces: string[]): { reverted: number; armed: numb
     }
     for (const d of drafts) {
       if (d.status === "sending") {
-        save({ ...d, status: "failed", error: "Phaethon closed while this was sending; check Mail’s Sent mailbox before sending again." });
+        save({ ...d, status: "uncertain", sendAt: undefined, error: "Phaethon closed while this was sending. Check Sent Items before composing it again." });
         reverted++;
       } else if (d.status === "scheduled") {
-        if ((d.sendAt ?? 0) <= now) {
+        if (d.approvedAt === undefined) {
+          save({ ...d, status: "draft", sendAt: undefined, note: "Review and approve this draft to send it." });
+          reverted++;
+        } else if ((d.sendAt ?? 0) <= now) {
           save({ ...d, status: "draft", sendAt: undefined, note: "Phaethon was closed before it was sent, so it wasn’t sent." });
           reverted++;
         } else {

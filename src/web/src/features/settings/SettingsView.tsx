@@ -26,7 +26,9 @@ const NotificationsSection = lazy(() => import("./NotificationsSection").then((m
 const MemorySection = lazy(() => import("./life/MemorySection").then((m) => ({ default: m.MemorySection })));
 const PeopleSection = lazy(() => import("./life/PeopleSection").then((m) => ({ default: m.PeopleSection })));
 const MailSection = lazy(() => import("./life/MailSection").then((m) => ({ default: m.MailSection })));
+const CalendarSection = lazy(() => import("./life/CalendarSection").then((m) => ({ default: m.CalendarSection })));
 const AutomationsSection = lazy(() => import("./life/AutomationsSection").then((m) => ({ default: m.AutomationsSection })));
+const DesktopSection = lazy(() => import("./DesktopSection").then((m) => ({ default: m.DesktopSection })));
 
 /**
  * Settings is a page inside the shell (docs/UI-REBUILD.md › Settings, after
@@ -40,12 +42,14 @@ export const SECTIONS: { id: SettingsSection; label: string; icon: IconData; gro
   { id: "general", label: "General", icon: icons.mode, group: "Preferences" },
   { id: "appearance", label: "Appearance", icon: icons.appearance, group: "Preferences" },
   { id: "notifications", label: "Notifications", icon: icons.notifications, group: "Preferences" },
+  { id: "desktop", label: "Desktop integrations", icon: icons.folderOpen, group: "Preferences" },
   { id: "models", label: "AI & Models", icon: icons.model, group: "Models" },
   { id: "spaces", label: "Spaces", icon: icons.deck, group: "Workspace" },
   { id: "courses", label: "Courses", icon: icons.courses, group: "Workspace" },
   { id: "memory", label: "Memory", icon: icons.memory, group: "You" },
   { id: "people", label: "People", icon: icons.people, group: "You" },
   { id: "mail", label: "Mail & connectors", icon: icons.mail, group: "You" },
+  { id: "calendar", label: "Calendar", icon: icons.event, group: "You" },
   { id: "automations", label: "Automations", icon: icons.automation, group: "You" },
   { id: "privacy", label: "Privacy", icon: icons.locked, group: "Phaethon" },
   { id: "about", label: "About", icon: icons.info, group: "Phaethon" },
@@ -207,6 +211,10 @@ function Body({ section }: { section: SettingsSection }) {
       return <PrivacySection />;
     case "general":
       return <GeneralSection />;
+    case "calendar":
+      return <Suspense fallback={null}><CalendarSection /></Suspense>;
+    case "desktop":
+      return <Suspense fallback={null}><DesktopSection /></Suspense>;
     case "models":
     case "providers":
     case "agents":

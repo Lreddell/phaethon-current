@@ -2,6 +2,7 @@ import { Menu, nativeImage, Tray, type MenuItemConstructorOptions } from "electr
 import { IDENTITY } from "../shared/channel.ts";
 import type { AppTarget, TrayAction, TrayState } from "../shared/host.ts";
 import { TRAY_ICON_1X, TRAY_ICON_2X } from "./tray-icon.ts";
+import { desktopStatus, describeStatus, windowsTrayImage } from "./windows-status.ts";
 
 /**
  * Phaethon in the menu bar (the notification area on Windows and Linux): a
@@ -75,8 +76,11 @@ export function createTray(h: TrayHandlers): { update: (state: TrayState) => voi
   icon.addRepresentation({ scaleFactor: 1, dataURL: TRAY_ICON_1X });
   icon.addRepresentation({ scaleFactor: 2, dataURL: TRAY_ICON_2X });
   icon.setTemplateImage(true);
-  const tray = new Tray(icon);
+  const windows = process.platform === "win32";
+  const tray = new Tray(windows ? windowsTrayImage(icon) : icon);
   tray.setToolTip(IDENTITY.productName);
+  if (windows) tray.on("double-click", () => h.open());
+  let lastStatus: ReturnType<typeof desktopStatus>;
   let state: TrayState = { keepRunning: true, openAtLogin: false, running: 0, sending: [], automations: { on: 0 }, recent: [], unseen: 0 };
   let refreshTimer: NodeJS.Timeout | undefined;
   const scheduleRefresh = () => {
@@ -95,7 +99,14 @@ export function createTray(h: TrayHandlers): { update: (state: TrayState) => voi
     menu.on("menu-will-show", () => state.unseen && h.action({ kind: "seen" }));
     tray.setContextMenu(menu);
     if (process.platform === "darwin") tray.setTitle(state.unseen ? String(state.unseen) : "", { fontType: "monospacedDigit" });
-    const busy = state.running ? "writing a reply" : state.sending.length ? "sending mail" : "";
+    if (windows) {
+      const status = desktopStatus(state);
+      if (status !== lastStatus) {
+        tray.setImage(windowsTrayImage(icon, status));
+        lastStatus = status;
+      }
+    }
+    const busy = describeStatus(state);
     tray.setToolTip(busy ? `${IDENTITY.productName} · ${busy}` : IDENTITY.productName);
   };
   rebuild();

@@ -39,7 +39,8 @@ export function MailMark({ provider, className, decorative = true }: { provider:
 export function AppMark({ app, className }: { app: MailApp | "shortcuts"; className?: string }) {
   const icon = useLoad(() => invoke<{ dataUrl: string | null }>("mail_app_icon", { app }).catch(() => ({ dataUrl: null })), [app], "mail:appIcon");
   if (icon.data?.dataUrl) return <img src={icon.data.dataUrl} alt="" aria-hidden draggable={false} data-slot="app-mark" className={cn("size-6 shrink-0 object-contain", className)} />;
-  const glyph = app === "apple-mail" ? icons.apple : app === "outlook" ? icons.microsoft : app === "shortcuts" ? icons.automation : icons.mail;
+  if (app === "google-mail") return <MailMark provider="gmail" className={className} />;
+  const glyph = app === "apple-mail" ? icons.apple : app === "outlook" || app === "outlook-win" || app === "graph" ? icons.microsoft : app === "shortcuts" ? icons.automation : icons.mail;
   return (
     <span aria-hidden data-slot="app-mark" className={cn("inline-flex size-6 shrink-0 items-center justify-center text-muted-foreground", className)}>
       <Icon icon={glyph} className="size-[80%]" />
@@ -48,5 +49,6 @@ export function AppMark({ app, className }: { app: MailApp | "shortcuts"; classN
 }
 
 export function appLabel(app: MailApp): string {
-  return app === "apple-mail" ? "Apple Mail" : app === "outlook" ? "Outlook" : "Test mail";
+  return app === "apple-mail" ? "Apple Mail" : app === "outlook" || app === "outlook-win" ? "Outlook" :
+    app === "graph" ? "Microsoft Graph" : app === "google-mail" ? "Gmail" : "Test mail";
 }

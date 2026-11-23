@@ -87,7 +87,7 @@ export class Session {
     return this.getWith(url, null, null);
   }
 
-  /** A conditional GET; a 304 comes back as is when a validator was sent. Validators go on every hop. */
+  /** A conditional GET; a 304 comes back as is when a validator was sent to the course site. */
   getConditional(url: URL, etag: string | null, modified: string | null): Promise<HttpResponse> {
     return this.getWith(url, etag, modified);
   }
@@ -97,12 +97,16 @@ export class Session {
     let at = url;
     for (let hop = 0; hop < 6; hop++) {
       const headers: Record<string, string> = {};
-      if (this.site.owns(at)) headers.cookie = this.cookieHeader();
-      if (etag !== null) headers["if-none-match"] = etag;
-      if (modified !== null) headers["if-modified-since"] = modified;
-      const res = await this.send(at, { headers });
+      const ownSite = this.site.owns(at);
+      if (ownSite) {
+        headers.cookie = this.cookieHeader();
+        if (etag !== null) headers["if-none-match"] = etag;
+        if (modified !== null) headers["if-modified-since"] = modified;
+      }
+      const lookup = ownSite ? undefined : await publicLookup(at);
+      const res = await this.send(at, { headers, lookup });
       const s = res.status;
-      if (s === 304 && (etag !== null || modified !== null)) return res;
+      if (s === 304 && ownSite && (etag !== null || modified !== null)) return res;
       if (s >= 300 && s <= 399) {
         res.discard();
         const loc = res.header("location");
@@ -116,7 +120,9 @@ export class Session {
         }
         if (!next) throw LmsError.other("The site sent a redirect without an address.");
         const loopback = testing.loopback && isLoopbackHost(next);
-        if (next.protocol !== "https:" && !this.site.owns(next) && !loopback) throw LmsError.other("The site redirected to an insecure address.");
+        if (next.username || next.password || (!this.site.owns(next) && next.protocol !== "https:" && !loopback)) {
+          throw LmsError.other("The site redirected to an insecure address.");
+        }
         at = next;
         continue;
       }
@@ -185,19 +191,21 @@ export function parseJson<T>(text: string): T {
  * hop's host is resolved, every address checked, and the connection made to a
  * checked address (so a second DNS answer can't point it somewhere local).
  */
+async function publicLookup(url: URL): Promise<net.LookupFunction | undefined> {
+  if (testing.loopback && isLoopbackHost(url)) return undefined;
+  const pinned = await publicAddress(url);
+  if (!pinned) throw LmsError.other("Not downloaded: the link points at this computer or its local network.");
+  return ((_host: string, options: { all?: boolean }, cb: (...args: unknown[]) => void) => {
+    if (options?.all) cb(null, [pinned]);
+    else cb(null, pinned.address, pinned.family);
+  }) as unknown as net.LookupFunction;
+}
+
 export async function fetchExternal(url: URL, signal?: AbortSignal): Promise<HttpResponse> {
   let at = url;
   for (let hop = 0; hop < 6; hop++) {
-    if (at.protocol !== "https:" && at.protocol !== "http:") throw LmsError.other("Not a web link.");
-    let lookup: net.LookupFunction | undefined;
-    if (!(testing.loopback && isLoopbackHost(at))) {
-      const pinned = await publicAddress(at);
-      if (!pinned) throw LmsError.other("Not downloaded: the link points at this computer or its local network.");
-      lookup = ((_host: string, options: { all?: boolean }, cb: (...args: unknown[]) => void) => {
-        if (options?.all) cb(null, [pinned]);
-        else cb(null, pinned.address, pinned.family);
-      }) as unknown as net.LookupFunction;
-    }
+    if ((at.protocol !== "https:" && at.protocol !== "http:") || at.username || at.password) throw LmsError.other("Not a web link.");
+    const lookup = await publicLookup(at);
     let res: HttpResponse;
     try {
       res = await request(at, { signal, lookup });

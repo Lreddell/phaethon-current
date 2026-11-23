@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SCHEDULER_INTERVAL, type SchedulerStatus } from "#shared/os-scheduler";
 import { SkeletonRows } from "@/components/skeletons";
 import { toast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,33 @@ const clock = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "nume
 
 const KEY = "notify:settings";
 const BG_KEY = "notify:background";
+const LAUNCHER_KEY = "notify:background-launcher";
+
+function BackgroundLauncherRow() {
+  const launcher = useLoad(() => invoke<SchedulerStatus>("background_launcher_status"), [], LAUNCHER_KEY);
+  const [pending, setPending] = useState(false);
+  const change = async (enabled: boolean) => {
+    setPending(true);
+    try { launcher.setData(await invoke<SchedulerStatus>("background_launcher_set", { enabled })); }
+    catch (error) { toast.error("Couldn’t change background launch", cleanMessage(error)); }
+    finally { setPending(false); }
+  };
+  const state = launcher.data;
+  if (!state || state.state === "unsupported") return null;
+  return (
+    <Row label="Relaunch for scheduled tasks" description={state.reason ?? (state.enabled
+      ? `Windows Task Scheduler checks every ${SCHEDULER_INTERVAL} minutes while you’re signed in. Phaethon opens without a window if it was closed.`
+      : `Let Windows start Phaethon every ${SCHEDULER_INTERVAL} minutes while you’re signed in, even after you quit the app.`)}>
+      {state.enabled && (state.state === "repair" || state.state === "unavailable")
+        ? <Button size="xs" variant="outline" disabled={pending} onClick={() => void change(true)}>Repair</Button>
+        : null}
+      <Button size="xs" variant="outline" pending={pending} onClick={() => void change(!state.enabled)}>
+        {state.enabled ? "Turn off" : state.state === "off" ? "Turn on" : "Try enabling"}
+      </Button>
+      {state.state === "repair" && !state.enabled ? <Button size="xs" variant="ghost-muted" disabled={pending} onClick={() => void change(false)}>Remove task</Button> : null}
+    </Row>
+  );
+}
 
 export function NotificationsSection() {
   const notify = useLoad(() => invoke<NotifySettings>("notify_settings_get"), [], KEY);
@@ -156,6 +184,7 @@ export function NotificationsSection() {
                 pending={pending === "login"}
                 onCheckedChange={(v) => void saveBg("login", "background_set", { patch: { openAtLogin: v } })}
               />
+              <BackgroundLauncherRow />
               <Row label="Automations" description={b.pausedUntil ? `Paused until ${clock.format(b.pausedUntil)}` : "Running on their schedules."}>
                 {b.pausedUntil ? (
                   <Button size="xs" variant="outline" pending={pending === "pause"} onClick={() => void saveBg("pause", "automations_resume", {})}>

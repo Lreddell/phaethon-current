@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Refusal } from "../../rpc/registry.ts";
 import { cleanRel, resolveIn, resolveInOther } from "../../core/resolve.ts";
-import { isWithin, realpath, writeFileAtomic } from "../../core/fsx.ts";
+import { fileStamp, isWithin, realpath, writeFileAtomic } from "../../core/fsx.ts";
 import { spaceDir } from "../../core/vault.ts";
 import type { Block } from "../../core/thread.ts";
 import { covers, grantsFor } from "../../grants/grants.ts";
@@ -10,6 +10,7 @@ import { filterCourseText, resolveCoursePath, visibleCourses } from "../../lms/a
 import { renderPdfPage } from "../../lms/text/pages.ts";
 import { listAttempts, loadAttempt } from "../../study/attempts.ts";
 import { search as runSearch, type Root } from "./search.ts";
+import { searchFileCatalog } from "../../files/catalog.ts";
 import { excludedFolder, excludedRefusal, exclusionsFor, type Exclusions } from "../../files/settings.ts";
 
 /**
@@ -249,6 +250,14 @@ export async function readPage(ctx: ToolCtx, p: string, page: number): Promise<B
 }
 
 export function searchFiles(ctx: ToolCtx, query: string, p: string): string {
+  return runSearch(searchRoots(ctx, p), query);
+}
+
+export function findSpaceFiles(ctx: ToolCtx, query: string, p: string, signal?: AbortSignal) {
+  return searchFileCatalog(() => searchRoots(ctx, p), query, signal);
+}
+
+function searchRoots(ctx: ToolCtx, p: string): Root[] {
   const t = target(ctx.space, p);
   if (t.kind === "other") {
     const place = resolveOther(ctx, t.space, t.rel);
@@ -256,7 +265,7 @@ export function searchFiles(ctx: ToolCtx, query: string, p: string): string {
     if (!fs.statSync(place.real).isDirectory()) throw new Refusal(`"${p}" is a file, not a folder`);
     const otherEx = exclusionsFor(t.space, spaceDir(t.space));
     const base = cleanRel(place.clean);
-    return runSearch([{ dir: place.real, prefix, skip: skipper(otherEx, base, place.real) }], query);
+    return [{ dir: place.real, prefix, skip: skipper(otherEx, base, place.real) }];
   }
   const parts = cleanRel(t.rel);
   const courseRoot = (folder: string): Root | undefined => {
@@ -288,25 +297,25 @@ export function searchFiles(ctx: ToolCtx, query: string, p: string): string {
       const r = courseRoot(c.folder);
       if (r) roots.push(r);
     }
-    return runSearch(roots, query);
+    return roots;
   }
   if (parts[0].toLowerCase() === "courses") {
     if (parts.length === 1) {
-      return runSearch(visibleCourses(ctx.space).map((c) => courseRoot(c.folder)).filter((r): r is Root => !!r), query);
+      return visibleCourses(ctx.space).map((c) => courseRoot(c.folder)).filter((r): r is Root => !!r);
     }
     const folder = parts[1];
     const r = courseRoot(folder);
     if (!r) resolveCoursePath(ctx.space, parts.join("/"), true);
     const sub = parts.slice(2).join("/");
-    if (!sub) return runSearch([r!], query);
+    if (!sub) return [r!];
     const dir = resolveCoursePath(ctx.space, parts.join("/"), true);
-    return runSearch([{ ...r!, dir, prefix: `courses/${folder}/${sub}/`, allow: (rel) => r!.allow!(`${sub}/${rel}`), filter: (rel, text) => r!.filter!(`${sub}/${rel}`, text) }], query);
+    return [{ ...r!, dir, prefix: `courses/${folder}/${sub}/`, allow: (rel) => r!.allow!(`${sub}/${rel}`), filter: (rel, text) => r!.filter!(`${sub}/${rel}`, text) }];
   }
   const real = resolveIn(ctx.root, t.rel, true);
   const ex = exclusionsFor(ctx.space, ctx.root);
   guard(ex, t.rel, parts, real);
   if (!fs.statSync(real).isDirectory()) throw new Refusal(`"${t.rel}" is a file, not a folder`);
-  return runSearch([{ dir: real, prefix: `${parts.join("/")}/`, skip: skipper(ex, parts, real) }], query);
+  return [{ dir: real, prefix: `${parts.join("/")}/`, skip: skipper(ex, parts, real) }];
 }
 
 /** A search's folder filter: true for a folder (relative to the searched one) that is excluded. */
@@ -315,7 +324,13 @@ function skipper(ex: Exclusions, base: string[], baseReal: string): ((rel: strin
   return (rel) => !!excludedFolder(ex, [...base, ...rel.split("/")], path.join(baseReal, ...rel.split("/")));
 }
 
-export type WritePlan = { real: string; rel: string; action: "create" | "replace"; before: string | null; summary: string; detail: string; truncated: boolean };
+export type WritePlan = { real: string; rel: string; action: "create" | "replace"; fingerprint: string | null; before: string | null; summary: string; detail: string; truncated: boolean };
+
+function writeFingerprint(stat: fs.BigIntStats | undefined): string | null {
+  if (!stat) return null;
+  if (!stat.isFile()) throw new Refusal("Only regular files can be changed with this tool.");
+  return fileStamp(stat);
+}
 
 function cut(text: string, cap: number): { text: string; cut: boolean } {
   const buf = Buffer.from(text, "utf8");
@@ -348,14 +363,15 @@ export function describeWrite(ctx: ToolCtx, p: string, contents: string): WriteP
   let action: "create" | "replace" = "create";
   let before: string | null = null;
   let beforeCut = false;
-  const st = fs.lstatSync(real, { throwIfNoEntry: false });
+  const st = fs.lstatSync(real, { bigint: true, throwIfNoEntry: false });
   if (st?.isDirectory()) throw new Refusal(`"${p}" is a folder`);
+  const fingerprint = writeFingerprint(st);
   if (st?.isFile()) {
     action = "replace";
     try {
       const fd = fs.openSync(real, "r");
       try {
-        const buf = Buffer.alloc(Math.min(st.size, PREVIEW_CAP + 1));
+        const buf = Buffer.alloc(Math.min(Number(st.size), PREVIEW_CAP + 1));
         const n = fs.readSync(fd, buf, 0, buf.length, 0);
         const c = cut(buf.subarray(0, n).toString("utf8"), PREVIEW_CAP);
         before = c.text;
@@ -374,6 +390,7 @@ export function describeWrite(ctx: ToolCtx, p: string, contents: string): WriteP
     real,
     rel,
     action,
+    fingerprint,
     before,
     summary: action === "replace" ? `Replace the file ${rel} with new contents (${lines}).` : `Create a new file ${rel} (${lines}).`,
     detail: detail.text,
@@ -385,14 +402,22 @@ export function describeWrite(ctx: ToolCtx, p: string, contents: string): WriteP
 export function runWrite(ctx: ToolCtx, plan: WritePlan, contents: string): string {
   const real = resolveIn(ctx.root, plan.rel, false);
   guard(exclusionsFor(ctx.space, ctx.root), plan.rel, cleanRel(plan.rel), real);
+  const checkTarget = () => {
+    const current = resolveIn(ctx.root, plan.rel, false);
+    guard(exclusionsFor(ctx.space, ctx.root), plan.rel, cleanRel(plan.rel), current);
+    const fingerprint = writeFingerprint(fs.lstatSync(current, { bigint: true, throwIfNoEntry: false }));
+    if (current !== plan.real || fingerprint !== plan.fingerprint) throw new Refusal(`"${plan.rel}" changed after review. Ask for a new approval.`);
+  };
+  checkTarget();
   try {
     fs.mkdirSync(path.dirname(real), { recursive: true });
   } catch (e) {
     throw new Refusal(`cannot create the folder for "${plan.rel}": ${(e as Error).message}`);
   }
   try {
-    writeFileAtomic(real, contents, { tmp: path.join(path.dirname(real), `.${path.basename(real)}.phaethon-tmp`) });
+    writeFileAtomic(real, contents, { tmp: path.join(path.dirname(real), `.${path.basename(real)}.phaethon-tmp`), beforeCommit: checkTarget });
   } catch (e) {
+    if (e instanceof Refusal) throw e;
     throw new Refusal(`cannot write "${plan.rel}": ${(e as Error).message}`);
   }
   return `Wrote ${Buffer.byteLength(contents, "utf8")} bytes to ${plan.rel}.`;

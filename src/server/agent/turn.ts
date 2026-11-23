@@ -182,7 +182,7 @@ export async function agentSend(args: SendArgs, signal?: AbortSignal): Promise<v
   }
 
   telemetry.capture("usage", "action_completed", { action: "chat_sent" });
-  const autoFallback = readSettings().autoFallback !== false && continueFrom === undefined;
+  const autoFallback = readSettings().autoFallback && continueFrom === undefined;
   let snapshot: Message[] | null = null;
   if (autoFallback) {
     try {

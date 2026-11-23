@@ -33,7 +33,7 @@ export type JobDef = {
   model: boolean;
 };
 
-export type JobState = { enabled?: boolean; since?: number; lastRun?: number; lastOk?: boolean; lastResult?: string; lastError?: string };
+export type JobState = { enabled?: boolean; since?: number; lastRun?: number; lastOk?: boolean; lastResult?: string; lastError?: string; claimedSlot?: number };
 
 export type JobView = {
   id: string;
@@ -45,7 +45,7 @@ export type JobView = {
   ready: Ready;
   running: boolean;
   next: number | null;
-} & Omit<JobState, "enabled" | "since">;
+} & Omit<JobState, "enabled" | "since" | "claimedSlot">;
 
 const CATCH_UP_MS = 24 * 3_600_000;
 /** Not automations: they keep running while automations are paused. */
@@ -142,8 +142,12 @@ export function viewJobs(now = Date.now()): JobView[] {
 
 /** When a job last ran, or when counting started. */
 export function jobBaseline(id: string): number | undefined {
-  const st = readState()[id];
-  return st?.lastRun ?? st?.since;
+  return baseline(readState()[id]);
+}
+
+function baseline(st: JobState | undefined): number | undefined {
+  const latest = Math.max(st?.since ?? 0, st?.lastRun ?? 0, st?.claimedSlot ?? 0);
+  return latest || undefined;
 }
 
 /** Starts counting from now: a schedule just switched on waits for its next time. */
@@ -162,7 +166,7 @@ export function setJobEnabled(id: string, enabled: boolean): void {
 }
 
 /** Runs a job now (the "Run now" button, tests). Resolves with its result line. */
-export async function runJob(id: string, opts: { force?: boolean } = {}): Promise<string> {
+export async function runJob(id: string, opts: { force?: boolean; slot?: number } = {}): Promise<string> {
   const j = find(id);
   if (running.has(id)) throw new Refusal("That job is already running.");
   const ready = safeReady(j);
@@ -173,14 +177,15 @@ export async function runJob(id: string, opts: { force?: boolean } = {}): Promis
   if (j.model) modelBusy = true;
   const st = readState()[id];
   const since = st?.lastRun ?? st?.since;
-  const started = Date.now();
+  const started = Math.max(Date.now(), opts.slot ?? 0);
   try {
+    if (opts.slot !== undefined) patchState(id, { claimedSlot: opts.slot });
     const result = await j.run(ctl.signal, since);
-    patchState(id, { lastRun: started, lastOk: true, lastResult: result.slice(0, 500), lastError: undefined });
+    patchState(id, { claimedSlot: undefined, lastRun: started, lastOk: true, lastResult: result.slice(0, 500), lastError: undefined });
     return result;
   } catch (e) {
     const message = messageOf(e);
-    patchState(id, { lastRun: started, lastOk: false, lastError: message.slice(0, 500) });
+    patchState(id, { claimedSlot: undefined, lastRun: started, lastOk: false, lastError: message.slice(0, 500) });
     log.warn(`job ${id} failed`, { error: message });
     if (j.model || id.startsWith("schedule:")) notifyLater({ kind: "job", title: `${j.title} didn’t run`, body: message.slice(0, 200), target: { kind: "settings", section: "automations" } });
     throw e;
@@ -206,37 +211,58 @@ export async function tick(now = Date.now()): Promise<string[]> {
       continue;
     }
     if (due === undefined) continue;
-    const baseline = st.lastRun ?? st.since;
-    if (baseline === undefined) {
+    const last = baseline(st);
+    if (last === undefined) {
       // First sight: start counting from now (the sweep runs at once; it's cheap).
       if (j.model || j.optional) {
         patchState(j.id, { since: now });
         continue;
       }
-    } else if (due <= baseline) continue;
+    } else if (due <= last) continue;
     if (!safeReady(j).ok) continue;
     if (j.model && modelBusy) continue;
     started.push(j.id);
-    void runJob(j.id).catch(() => {});
+    void runJob(j.id, { slot: due }).catch(() => {});
   }
   return started;
 }
 
 let timer: NodeJS.Timeout | undefined;
+let firstTick: NodeJS.Timeout | undefined;
+
+/** A claimed run can have produced effects before an unexpected shutdown. */
+export function recoverInterruptedJobs(): void {
+  const state = readState();
+  let changed = false;
+  for (const entry of Object.values(state)) {
+    if (!entry || typeof entry.claimedSlot !== "number" || !Number.isFinite(entry.claimedSlot)) continue;
+    entry.lastRun = Math.max(entry.lastRun ?? 0, entry.claimedSlot);
+    entry.lastOk = false;
+    entry.lastError = "Phaethon stopped while this run was in progress.";
+    delete entry.claimedSlot;
+    changed = true;
+  }
+  if (changed) writeState(state);
+}
+
+export function wakeScheduler(): void {
+  if (timer) void tick().catch((e) => log.warn("job tick failed", { error: messageOf(e) }));
+}
 
 export function startScheduler(): void {
   if (timer || (isTest() && process.env.PHAETHON_JOBS !== "1")) return;
-  const loop = () => {
-    tick().catch((e) => log.warn("job tick failed", { error: messageOf(e) }));
-  };
-  setTimeout(loop, 5_000).unref?.();
-  timer = setInterval(loop, TICK_MS);
+  recoverInterruptedJobs();
+  firstTick = setTimeout(wakeScheduler, 5_000);
+  firstTick.unref?.();
+  timer = setInterval(wakeScheduler, TICK_MS);
   timer.unref?.();
 }
 
 export function stopScheduler(): void {
   if (timer) clearInterval(timer);
+  if (firstTick) clearTimeout(firstTick);
   timer = undefined;
+  firstTick = undefined;
   for (const c of running.values()) c.abort();
 }
 

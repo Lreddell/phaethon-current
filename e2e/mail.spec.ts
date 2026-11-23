@@ -48,7 +48,7 @@ function setupMail(home: string): string {
 
 const sentLines = (file: string) => (fs.existsSync(`${file}.sent.jsonl`) ? fs.readFileSync(`${file}.sent.jsonl`, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
 
-test("an email the agent was asked to send counts down; Stop, Edit and Send work, and it lands on the person's card", async ({ page }) => {
+test("the user approves an email before the countdown, and Stop, Edit and Send work", async ({ page }) => {
   let mailFile = "";
   core = await startCore({
     setup: (home) => {
@@ -59,7 +59,7 @@ test("an email the agent was asked to send counts down; Stop, Edit and Send work
       claude: true,
       steps: [
         { tools: [{ name: "draft_email", id: "d1", input: { to: ["dana@example.edu"], subject: "Out sick today", body: "Hi Dana,\n\nI'm out sick today and will catch up tomorrow.\n\nJeryn", intent: "send" } }] },
-        { text: "It's on its way to Dana unless you stop it." },
+        { text: "Review the draft for Dana and press Send when it’s ready." },
       ],
     },
   });
@@ -69,11 +69,13 @@ test("an email the agent was asked to send counts down; Stop, Edit and Send work
 
   const card = page.locator('[data-slot="mail-draft"]');
   await expect(card).toBeVisible();
-  await expect(card.locator('[data-slot="draft-status"]')).toHaveText(/Sending in 0:5\d|Sending in 1:00/);
+  await expect(card.locator('[data-slot="draft-status"]')).toHaveText("Ready to send");
   await expect(card.getByText("me@example.edu")).toBeVisible();
   await expect(card.getByText("Dana Reyes")).toBeVisible();
-  await expect(card.getByText("Out sick today", { exact: true })).toBeVisible();
-  await expect(page.getByText("It's on its way to Dana unless you stop it.")).toBeVisible();
+  await expect(card.getByRole("textbox", { name: "Subject" })).toHaveValue("Out sick today");
+  expect(sentLines(mailFile)).toEqual([]);
+  await card.getByRole("button", { name: "Send to Dana Reyes" }).click();
+  await expect(card.locator('[data-slot="draft-status"]')).toHaveText(/Sending in 0:5\d|Sending in 1:00/);
 
   // Stop: nothing goes out.
   await card.getByRole("button", { name: "Stop" }).click();
@@ -86,9 +88,10 @@ test("an email the agent was asked to send counts down; Stop, Edit and Send work
   await card.getByRole("textbox", { name: "Message" }).click();
   await expect.poll(() => JSON.parse(fs.readFileSync(fs.readdirSync(path.join(core!.home, "Phaethon/default/spaces/school/.phaethon/outbox")).map((f) => path.join(core!.home, "Phaethon/default/spaces/school/.phaethon/outbox", f))[0]!, "utf8")).subject).toBe("Out sick today (back tomorrow)");
 
-  // Send: a short undo window, then it is sent with the edit.
+  // Approve the edited draft, then send without waiting out the countdown.
   await card.getByRole("button", { name: "Send to Dana Reyes" }).click();
-  await expect(card.locator('[data-slot="draft-status"]')).toHaveText(/Sending in 0:0\d/);
+  await expect(card.locator('[data-slot="draft-status"]')).toHaveText(/Sending in/);
+  await card.getByRole("button", { name: "Send now" }).click();
   await expect(card.locator('[data-slot="draft-status"]')).toHaveText(/^Sent/, { timeout: 15_000 });
   const sent = sentLines(mailFile);
   expect(sent).toHaveLength(1);
@@ -190,12 +193,14 @@ test("the countdown's digits are monospaced, so the line never shifts as they ti
   core = await startCore({
     setup: (home) => void setupMail(home),
     env: { PHAETHON_FAKE_MAIL: "__HOME__/fake-mail.json" },
-    script: { claude: true, steps: [{ tools: [{ name: "draft_email", id: "d9", input: { to: ["dana@example.edu"], subject: "Out", body: "Out today.", intent: "send" } }] }, { text: "On its way unless you stop it." }] },
+    script: { claude: true, steps: [{ tools: [{ name: "draft_email", id: "d9", input: { to: ["dana@example.edu"], subject: "Out", body: "Out today.", intent: "send" } }] }, { text: "Ready for your review." }] },
   });
   await core.open(page);
   await composer(page).fill("tell Dana I'm out");
   await page.keyboard.press("Enter");
   const status = page.locator('[data-slot="draft-status"]');
+  await expect(status).toHaveText("Ready to send");
+  await page.locator('[data-slot="mail-draft"]').getByRole("button", { name: "Send to Dana Reyes" }).click();
   await expect(status).toHaveText(/Sending in/);
   const digits = status.locator(".type-live");
   expect(await digits.evaluate((el) => getComputedStyle(el).fontFamily)).toContain("JetBrains Mono");

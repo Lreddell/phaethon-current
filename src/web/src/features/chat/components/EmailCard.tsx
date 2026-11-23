@@ -201,7 +201,8 @@ export function EmailCard({ space, initial, id, intent }: { space: string; initi
     if (k === said.current) return;
     said.current = k;
     setAnnounce(
-      d.status === "scheduled" ? `Sending in ${Math.round((d.sendAt! - Date.now()) / 1000)} seconds unless you stop it.` : d.status === "sent" ? "Sent." : d.status === "failed" ? `Not sent: ${d.error ?? ""}` : "",
+      d.status === "scheduled" ? `Sending in ${Math.round((d.sendAt! - Date.now()) / 1000)} seconds unless you stop it.` : d.status === "sent" ?
+        d.acceptedByProvider ? `Accepted by ${d.account.startsWith("google-mail:") ? "Gmail" : "Microsoft"}.` : "Sent." : d.status === "failed" || d.status === "uncertain" ? d.error ?? "" : "",
     );
   }, [d]);
 
@@ -219,7 +220,10 @@ export function EmailCard({ space, initial, id, intent }: { space: string; initi
   const save = (patch: DraftPatch) => run("save", () => updateDraft(space, draftId, patch), "Couldn’t save the change");
   const dirty = subject !== d.subject || body !== d.body;
   const flush = async () => {
-    if (dirty) await updateDraft(space, draftId, { subject, body }).then(setD);
+    if (!dirty) return d;
+    const saved = await updateDraft(space, draftId, { subject, body });
+    setD(saved);
+    return saved;
   };
   const addRecipients = (field: "to" | "cc", text: string) => {
     const add = splitList(text);
@@ -231,25 +235,30 @@ export function EmailCard({ space, initial, id, intent }: { space: string; initi
     run(
       "send",
       async () => {
-        await flush();
-        return sendDraft(space, draftId);
+        const reviewed = await flush();
+        return sendDraft(space, draftId, reviewed.updated);
       },
       "Couldn’t send it",
     );
   const pause = () => run("pause", () => updateDraft(space, draftId, {}), "Couldn’t pause the send");
 
   const total = d.sendAt !== undefined ? Math.max(1, d.sendAt - d.updated) : 1;
+  const gmail = d.account.startsWith("google-mail:");
+  const cloud = gmail || d.account.startsWith("graph:");
+  const acceptanceProvider = gmail ? "Gmail" : "Microsoft";
   const status =
     d.status === "scheduled"
       ? `Sending in ${mmss(left)}`
       : d.status === "sending"
         ? "Sending…"
         : d.status === "sent"
-          ? `Sent ${d.sentAt ? clock.format(d.sentAt) : ""}`
+          ? d.acceptedByProvider ? `Accepted by ${acceptanceProvider}` : `Sent ${d.sentAt ? clock.format(d.sentAt) : ""}`
           : d.status === "failed"
             ? "Not sent"
+            : d.status === "uncertain"
+              ? "Send outcome unknown"
             : d.status === "opened"
-              ? "Opened in Mail"
+              ? cloud ? "Saved to mailbox drafts" : "Opened in Mail"
               : d.status === "discarded"
                 ? "Discarded"
                 : intent === "send" || d.intent === "send"
@@ -471,8 +480,8 @@ export function EmailCard({ space, initial, id, intent }: { space: string; initi
             )}
           </div>
         ) : null}
-        {(d.note && (d.status === "draft" || d.status === "sent")) || (d.status === "failed" && d.error) ? (
-          <p className={cn("border-t px-4 py-2 text-xs", d.status === "failed" ? "text-destructive-foreground" : "text-muted-foreground")}>{d.status === "failed" ? d.error : d.note}</p>
+        {(d.note && (d.status === "draft" || d.status === "sent")) || ((d.status === "failed" || d.status === "uncertain") && d.error) ? (
+          <p className={cn("border-t px-4 py-2 text-xs", d.error ? "text-destructive-foreground" : "text-muted-foreground")}>{d.error ?? d.note}</p>
         ) : null}
 
         <div className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-b-card border-t bg-well px-3 py-2">
@@ -486,19 +495,22 @@ export function EmailCard({ space, initial, id, intent }: { space: string; initi
                 <Icon icon={icons.edit} />
                 Edit
               </Button>
-              <Button size="sm" variant="ghost" pending={busy === "now"} onClick={() => void run("now", () => sendDraft(space, draftId, true), "Couldn’t send it")}>
+              <Button size="sm" variant="ghost" pending={busy === "now"} onClick={() => void run("now", () => sendDraft(space, draftId, d.updated, true), "Couldn’t send it")}>
                 Send now
               </Button>
             </>
           ) : editable ? (
             <>
-              <Button size="sm" pending={busy === "send"} disabled={!d.to.length || !!busy} onClick={() => void send()} aria-label={d.to.length ? `Send to ${d.to.map((a) => names.get(a) ?? a).join(", ")}` : "Send (add a recipient first)"}>
+              <Button size="sm" pending={busy === "send"} disabled={!d.to.length || !!busy || (cloud && account?.canSend !== true)} onClick={() => void send()} aria-label={d.to.length ? `Send to ${d.to.map((a) => names.get(a) ?? a).join(", ")}` : "Send (add a recipient first)"}>
                 <Icon icon={icons.mailSend} />
                 {d.status === "failed" ? "Try again" : "Send"}
               </Button>
-              <Button size="sm" variant="ghost" pending={busy === "open"} onClick={() => void run("open", async () => (await flush(), openDraft(space, draftId)), "Couldn’t open it in Mail")}>
-                Open in Mail
-              </Button>
+              {!cloud || account?.canOpen ? (
+                <Button size="sm" variant="ghost" pending={busy === "open"} onClick={() => void run("open", async () => (await flush(), openDraft(space, draftId)), "Couldn’t hand the draft to the provider")}>
+                  {cloud ? "Save to mailbox drafts" : "Open in Mail"}
+                </Button>
+              ) : null}
+              {cloud && !account?.canSend && <Button size="sm" variant="link" onClick={() => openSettings("mail")}>Enable sending in Settings</Button>}
               {custom === null ? (
                 <Menu>
                   <MenuTrigger render={<Button size="sm" variant="ghost-muted" pending={busy === "review" || busy === "tone"} />}>
@@ -541,7 +553,7 @@ export function EmailCard({ space, initial, id, intent }: { space: string; initi
             </>
           ) : d.status === "sent" ? (
             <span className="px-1 text-muted-foreground text-xs">
-              Sent from {fromAddress} via {appLabel(d.account.split(":")[0] as Parameters<typeof appLabel>[0])}
+              {d.acceptedByProvider ? `${acceptanceProvider} accepted the request. Check the mailbox’s Sent folder for the message.` : `Sent from ${fromAddress} via ${appLabel(d.account.split(":")[0] as Parameters<typeof appLabel>[0])}`}
             </span>
           ) : d.status === "sending" ? (
             <span className="px-1 text-muted-foreground text-xs">Handing it to Mail…</span>

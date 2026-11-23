@@ -79,44 +79,42 @@ export function matches(c: Cron, d: Date): boolean {
   return c.minute.values.has(d.getMinutes()) && c.hour.values.has(d.getHours()) && c.month.values.has(d.getMonth() + 1) && dayMatches(c, d);
 }
 
+const MINUTE = 60_000;
+
+/** On the autumn clock change, use the first occurrence of a repeated local minute. */
+function firstWallMinute(date: Date): boolean {
+  return new Date(date).setSeconds(0, 0) === date.getTime();
+}
+
 /** The first matching minute strictly after `after` (ms), within ~4 years; undefined if none. */
 export function nextRun(c: Cron, after: number): number | undefined {
-  const d = new Date(after);
-  d.setSeconds(0, 0);
-  d.setMinutes(d.getMinutes() + 1);
+  const d = new Date(Math.floor(after / MINUTE) * MINUTE + MINUTE);
   const limit = after + 4 * 366 * 86_400_000;
   while (d.getTime() <= limit) {
+    const at = d.getTime();
     if (!c.month.values.has(d.getMonth() + 1)) {
       d.setMonth(d.getMonth() + 1, 1);
       d.setHours(0, 0, 0, 0);
-      continue;
-    }
-    if (!dayMatches(c, d)) {
+    } else if (!dayMatches(c, d)) {
       d.setDate(d.getDate() + 1);
       d.setHours(0, 0, 0, 0);
-      continue;
-    }
-    if (!c.hour.values.has(d.getHours())) {
+    } else if (!c.hour.values.has(d.getHours())) {
       d.setHours(d.getHours() + 1, 0, 0, 0);
-      continue;
-    }
-    if (!c.minute.values.has(d.getMinutes())) {
+    } else if (!c.minute.values.has(d.getMinutes())) {
       d.setMinutes(d.getMinutes() + 1, 0, 0);
-      continue;
-    }
-    return d.getTime();
+    } else if (firstWallMinute(d)) return at;
+    if (d.getTime() <= at) d.setTime(at + MINUTE);
   }
   return undefined;
 }
 
 /** The most recent matching minute at or before `at`, looking back up to `withinMs`. */
 export function previousRun(c: Cron, at: number, withinMs: number): number | undefined {
-  const d = new Date(at);
-  d.setSeconds(0, 0);
+  const d = new Date(Math.floor(at / MINUTE) * MINUTE);
   const stop = at - withinMs;
   while (d.getTime() >= stop) {
-    if (matches(c, d)) return d.getTime();
-    d.setMinutes(d.getMinutes() - 1);
+    if (matches(c, d) && firstWallMinute(d)) return d.getTime();
+    d.setTime(d.getTime() - MINUTE);
   }
   return undefined;
 }

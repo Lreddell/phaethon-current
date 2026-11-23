@@ -1,9 +1,12 @@
 import { commands, Refusal } from "../rpc/registry.ts";
+import type { SchedulerStatus } from "../../shared/os-scheduler.ts";
+import { host } from "../host.ts";
+import { authorizeIntegration } from "../integrations/policy.ts";
 import { onStart, onStop } from "../lifecycle.ts";
 import { describeCron, toCron } from "./cron.ts";
 import { digestSettings, registerBuiltinJobs, runSchedule, setDigestSettings, type DigestSettings } from "./builtin.ts";
 import { addSchedule, describeSchedule, readSchedules, removeSchedule, updateSchedule, type ScheduleInput } from "./schedules.ts";
-import { resetBaseline, runJob, setJobEnabled, startScheduler, stopScheduler, viewJobs } from "./scheduler.ts";
+import { resetBaseline, runJob, setJobEnabled, startScheduler, stopScheduler, viewJobs, wakeScheduler } from "./scheduler.ts";
 
 /** Settings › Automations. */
 
@@ -12,6 +15,14 @@ registerBuiltinJobs();
 const view = (s: ReturnType<typeof readSchedules>[number]) => ({ ...s, when: describeSchedule(s) });
 
 commands({
+  background_launcher_status: (): SchedulerStatus | Promise<SchedulerStatus> => host().available
+    ? host().call<SchedulerStatus>({ op: "backgroundLauncher", action: "status" })
+    : { provider: null, state: "unsupported", enabled: false },
+  background_launcher_set: ({ enabled }: { enabled?: unknown }) => {
+    authorizeIntegration("modify", "user", host().available);
+    if (typeof enabled !== "boolean") throw new Refusal("Choose whether to allow background launch.");
+    return host().call<SchedulerStatus>({ op: "backgroundLauncher", action: enabled ? "enable" : "disable" });
+  },
   jobs_list: () => viewJobs(),
   job_set_enabled: ({ id, enabled }: { id: string; enabled: boolean }) => {
     setJobEnabled(id, enabled === true);
@@ -61,5 +72,8 @@ commands({
   digest_set: (d: DigestSettings) => setDigestSettings({ spaces: Array.isArray(d?.spaces) ? d.spaces : [], time: String(d?.time ?? "07:00") }),
 });
 
-onStart("start background jobs", () => startScheduler());
+onStart("start background jobs", () => {
+  startScheduler();
+  host().on((event) => { if (event.kind === "schedulerTick") wakeScheduler(); });
+});
 onStop("stop background jobs", () => stopScheduler());

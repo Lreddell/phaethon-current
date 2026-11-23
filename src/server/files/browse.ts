@@ -1,8 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { FileCatalogProvider } from "../../shared/file-catalog.ts";
 import { Refusal, messageOf } from "../rpc/registry.ts";
 import { cleanRel, resolveIn } from "../core/resolve.ts";
 import { lstatOrNull } from "../core/fsx.ts";
+import { searchNativeFiles } from "./catalog.ts";
 import { excludedByName, type FileSort } from "./settings.ts";
 
 /**
@@ -27,7 +29,7 @@ export type FileEntry = {
 };
 
 export type FolderPage = { path: string; entries: FileEntry[]; total: number; offset: number };
-export type Found = { entries: FileEntry[]; truncated: boolean };
+export type Found = { entries: FileEntry[]; truncated: boolean; index?: FileCatalogProvider };
 
 export const PAGE_DEFAULT = 500;
 export const PAGE_MAX = 2000;
@@ -115,7 +117,7 @@ export function listFolder(spaceRoot: string, rel: string, o: ListOptions): Fold
   return { path: parts.join("/"), entries: page, total: all.length, offset };
 }
 
-export type WalkOptions = { query?: string; showHidden: boolean; limit: number; excluded: string[] };
+export type WalkOptions = { query?: string; showHidden: boolean; limit: number; excluded: string[]; signal?: AbortSignal };
 
 async function visibleNamesAsync(dir: string, showHidden: boolean, atRoot: boolean): Promise<fs.Dirent[]> {
   return (await fs.promises.readdir(dir, { withFileTypes: true })).filter(
@@ -146,6 +148,7 @@ export async function walkSpace(spaceRoot: string, o: WalkOptions): Promise<Foun
   const started = Date.now();
   const stack: { abs: string; rel: string; depth: number }[] = [{ abs: root, rel: "", depth: 0 }];
   while (stack.length) {
+    o.signal?.throwIfAborted();
     if (seen >= WALK_ENTRIES || Date.now() - started > WALK_MS) {
       truncated = true;
       break;
@@ -184,6 +187,25 @@ export async function walkSpace(spaceRoot: string, o: WalkOptions): Promise<Foun
       out.length = limit;
     }
   }
+  let index: FileCatalogProvider | undefined;
+  if (q && truncated) {
+    const found = await searchNativeFiles(() => [{
+      dir: root, prefix: "",
+      skip: (relative) => {
+        const parts = relative.split("/");
+        return Boolean(excludedByName(o.excluded, parts)) || (!o.showHidden && parts.some((part) => part.startsWith(".")));
+      },
+    }], q, o.signal);
+    const paths = new Set(out.map((entry) => entry.path));
+    index = found.providers[0];
+    for (const item of found.items) {
+      const name = item.path.split("/").at(-1)!;
+      if (!paths.has(item.path) && name.toLowerCase().includes(q)) {
+        out.push({ name, path: item.path, size: item.size, modified: item.modified, dir: false });
+        paths.add(item.path);
+      }
+    }
+  }
   if (q) {
     out.sort((a, b) => (a.dir !== b.dir ? (a.dir ? -1 : 1) : collator.compare(a.name, b.name) || collator.compare(a.path, b.path)));
   } else out.sort((a, b) => b.modified - a.modified);
@@ -198,5 +220,5 @@ export async function walkSpace(spaceRoot: string, o: WalkOptions): Promise<Foun
       }),
     );
   }
-  return { entries: out, truncated };
+  return { entries: out, truncated, ...(index ? { index } : {}) };
 }

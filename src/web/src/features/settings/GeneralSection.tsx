@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { LETTER_ORDER, pointsOf } from "@/features/grades/lib/gpa";
+import { SpeechSetup } from "@/features/speech/SpeechSetup";
 import { usePrefs } from "./prefs";
 import { CopyButton, Loader, Row, SettingsGroup, SwitchRow, useLoad } from "./ui";
 
@@ -70,6 +71,7 @@ export function GeneralSection() {
           </div>
         ))}
       </SettingsGroup>
+      <SpeechSetup />
     </>
   );
 }

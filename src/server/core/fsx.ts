@@ -50,6 +50,11 @@ export function statOrNull(p: string): fs.Stats | null {
   }
 }
 
+/** Identity and change stamp for a file when size and millisecond time alone can collide. */
+export function fileStamp(stat: fs.BigIntStats): string {
+  return [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join("/");
+}
+
 export function isNotFound(e: unknown): boolean {
   const code = (e as NodeJS.ErrnoException | undefined)?.code;
   return code === "ENOENT" || code === "ENOTDIR";
@@ -66,7 +71,7 @@ export function prettyJson(value: unknown): string {
  * given one, or `<file>.tmp`, plus a random suffix) and is created
  * exclusively, so a link planted at that name can't redirect the write.
  */
-export function writeFileAtomic(file: string, data: string | Uint8Array, options: { tmp?: string; mode?: number } = {}): void {
+export function writeFileAtomic(file: string, data: string | Uint8Array, options: { tmp?: string; mode?: number; beforeCommit?: () => void } = {}): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${options.tmp ?? `${file}.tmp`}.${process.pid}.${randomBytes(6).toString("hex")}`;
   try {
@@ -76,6 +81,7 @@ export function writeFileAtomic(file: string, data: string | Uint8Array, options
     } finally {
       fs.closeSync(fd);
     }
+    options.beforeCommit?.();
     fs.renameSync(tmp, file);
   } catch (e) {
     try {

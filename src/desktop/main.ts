@@ -1,14 +1,21 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, Notification, protocol, session, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, Notification, powerMonitor, protocol, session, shell } from "electron";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { CHANNEL, IDENTITY } from "../shared/channel.ts";
+import { desktopFlowRunUrl } from "../shared/desktop-flow.ts";
 import type { AppNotification, AppTarget, HostOp, TrayState } from "../shared/host.ts";
+import { SCHEDULER_FLAG } from "../shared/os-scheduler.ts";
+import { BackgroundLauncher } from "./background-launcher.ts";
+import { explorerArguments, forwardedExplorerArguments } from "./explorer-arguments.ts";
+import { ExplorerLink } from "./explorer-link.ts";
 import { createTray } from "./tray.ts";
+import { desktopStatus, describeStatus, windowsOverlay } from "./windows-status.ts";
 import { startCore, type CoreProcess } from "./core-process.ts";
 import { loadSignInPage } from "./sign-in-load.ts";
 import { updateCheck, updateDownload, updateInstall } from "./updater.ts";
+import { knownAppIcon } from "./app-icons.ts";
 import { keepWindowState, loadWindowState } from "./window-state.ts";
 
 /**
@@ -45,13 +52,18 @@ if (CHANNEL === "dev") {
 // Headless capture (scripts/capture.mjs) renders offscreen, skips the single-instance lock and uses
 // a throwaway browser profile, so a capture never reads or leaves state in the app's real one.
 if (captureTo) app.setPath("userData", process.env.PHAETHON_CAPTURE_PROFILE || fs.mkdtempSync(path.join(os.tmpdir(), "phaethon-capture-")));
-if (!captureTo && !app.requestSingleInstanceLock()) {
+const scheduledLaunch = process.argv.includes(SCHEDULER_FLAG);
+const initialExplorerSelection = process.platform === "win32" ? explorerArguments(process.argv) : undefined;
+const launcher = new BackgroundLauncher(() => app.getPath("userData"), app.isPackaged && !captureTo);
+const explorer = new ExplorerLink(app.isPackaged && !captureTo);
+if (!captureTo && !app.requestSingleInstanceLock({ scheduledLaunch, explorerSelection: initialExplorerSelection ?? null })) {
   app.quit();
 }
 
 const distDir = path.join(__dirname, "..");
 const webRoot = path.join(distDir, "web");
 let core: CoreProcess | undefined;
+let queuedExplorerSelection: NonNullable<ReturnType<typeof explorerArguments>> | undefined;
 let mainWindow: BrowserWindow | undefined;
 const signInWindows = new Map<number, BrowserWindow>();
 let quitting = false;
@@ -62,7 +74,7 @@ let trayState: TrayState | undefined;
 const shownNotes = new Set<Notification>();
 /** Started at login: no window until asked for. */
 // macOS says whether it launched the app at login; Windows and Linux pass the flag set below.
-const startHidden = () => process.argv.includes("--hidden") || (process.platform === "darwin" && app.getLoginItemSettings().wasOpenedAtLogin);
+const startHidden = () => scheduledLaunch || process.argv.includes("--hidden") || (process.platform === "darwin" && app.getLoginItemSettings().wasOpenedAtLogin);
 const keepRunning = () => (trayState?.keepRunning ?? true) && !captureTo && !!tray;
 
 function csp(): string {
@@ -134,14 +146,24 @@ function hardenContents(window: BrowserWindow, allowedOrigin: string): void {
   window.webContents.on("will-attach-webview", (event) => event.preventDefault());
 }
 
-/**
- * Web permissions are denied unless listed: the app's own pages only copy to
- * the clipboard and show video full screen, and course-site sign-in pages need nothing (no
- * camera, microphone, location, notifications or devices).
- */
-function lockPermissions(target: Electron.Session, allowed: ReadonlySet<string>): void {
-  target.setPermissionRequestHandler((_wc, permission, callback) => callback(allowed.has(permission)));
-  target.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
+let microphone: { id: string; contents: number; expires: number } | undefined;
+
+function mayCapture(contents: Electron.WebContents | null, url: string, mainFrame: boolean): boolean {
+  if (!mainFrame || !contents || contents !== mainWindow?.webContents || !microphone || microphone.contents !== contents.id || microphone.expires <= Date.now()) return false;
+  try {
+    const page = new URL(url);
+    return page.protocol === `${SCHEME}:` && page.host === "phaethon" && !page.username && !page.password;
+  } catch { return false; }
+}
+
+/** The main composer can request audio under a short grant created by the core. Sign-in partitions get no media permissions. */
+function lockPermissions(target: Electron.Session, allowed: ReadonlySet<string>, appSession = false): void {
+  target.setPermissionRequestHandler((wc, permission, callback, details) => {
+    if (permission !== "media") return callback(allowed.has(permission));
+    callback(appSession && "mediaTypes" in details && details.mediaTypes?.length === 1 && details.mediaTypes[0] === "audio" && mayCapture(wc, details.requestingUrl, details.isMainFrame));
+  });
+  target.setPermissionCheckHandler((wc, permission, origin, details) => permission === "media"
+    ? appSession && details.mediaType === "audio" && mayCapture(wc, origin, details.isMainFrame) : allowed.has(permission));
   target.setDevicePermissionHandler(() => false);
 }
 const APP_PERMISSIONS = new Set(["clipboard-sanitized-write", "fullscreen"]);
@@ -273,6 +295,10 @@ function parentWindow(): BrowserWindow | undefined {
 
 async function handle(op: HostOp): Promise<unknown> {
   switch (op.op) {
+    case "backgroundLauncher":
+      return launcher.configure(op.action);
+    case "explorerLink":
+      return explorer.change(op.action);
     case "pickFolder": {
       const parent = parentWindow();
       const options = { title: op.title, defaultPath: op.defaultPath, properties: ["openDirectory", "createDirectory"] as Array<"openDirectory" | "createDirectory"> };
@@ -300,6 +326,22 @@ async function handle(op: HostOp): Promise<unknown> {
     }
     case "revealPath":
       shell.showItemInFolder(op.path);
+      return null;
+    case "knownAppIcon":
+      return knownAppIcon(op.app);
+    case "desktopFlowAvailable":
+      return process.platform === "win32" && !!app.getApplicationNameForProtocol("ms-powerautomate://");
+    case "desktopFlowLaunch":
+      if (process.platform !== "win32") throw new Error("Power Automate for desktop requires Windows.");
+      await shell.openExternal(desktopFlowRunUrl(op.environmentId, op.workflowId, op.runId));
+      return null;
+    case "microphoneGrant":
+      if (!mainWindow?.isFocused() || !mainWindow.isVisible() || captureTo || !/^[0-9a-f-]{36}$/i.test(op.id))
+        throw new Error("Focus Phaethon’s composer before recording.");
+      microphone = { id: op.id, contents: mainWindow.webContents.id, expires: Date.now() + 30_000 };
+      return null;
+    case "microphoneRelease":
+      if (microphone?.id === op.id) microphone = undefined;
       return null;
     case "openExternal":
       if (!isSafeExternal(op.url)) throw new Error("Only web and mail links open outside Phaethon.");
@@ -421,6 +463,10 @@ function applyTrayState(state: TrayState): void {
   const before = trayState;
   trayState = state;
   tray?.update(state);
+  if (process.platform === "win32" && mainWindow) {
+    const description = describeStatus(state);
+    if (!before || describeStatus(before) !== description) mainWindow.setOverlayIcon(windowsOverlay(desktopStatus(state)), description);
+  }
   if (process.env.PHAETHON_TRAY_LOG) console.error(`[tray] state: ${JSON.stringify({ running: state.running, sending: state.sending.length, automations: state.automations.on, recent: state.recent.length, unseen: state.unseen, keepRunning: state.keepRunning })}`);
   // Start at login, in the menu bar only (packaged builds: a dev build would register Electron itself).
   if (app.isPackaged && before?.openAtLogin !== state.openAtLogin) app.setLoginItemSettings({ openAtLogin: state.openAtLogin, args: ["--hidden"] });
@@ -452,6 +498,11 @@ function openApp(target?: AppTarget): void {
  * written is hidden until the reply ends, so the reply isn't cut off.
  */
 function watchMainWindow(window: BrowserWindow): void {
+  if (process.platform === "win32") {
+    window.on("show", () => {
+      if (trayState) window.setOverlayIcon(windowsOverlay(desktopStatus(trayState)), describeStatus(trayState));
+    });
+  }
   window.on("close", (event) => {
     if (quitting || !keepRunning()) return;
     if ((trayState?.running ?? 0) > 0) {
@@ -482,7 +533,24 @@ function bringBack(): void {
   mainWindow.focus();
 }
 
-app.on("second-instance", bringBack);
+async function acceptExplorerSelection(selection: NonNullable<ReturnType<typeof explorerArguments>>): Promise<void> {
+  if (!core) { queuedExplorerSelection = selection; return; }
+  if ((await explorer.change("status")).state !== "active" || !core || quitting) return;
+  openApp();
+  core.emit({ kind: "explorerSelection", ...selection });
+}
+
+app.on("second-instance", (_event, _args, _cwd, data) => {
+  const launch = data as { scheduledLaunch?: boolean; explorerSelection?: unknown } | null;
+  if (launch?.scheduledLaunch === true) {
+    if (launcher.optedIn()) core?.emit({ kind: "schedulerTick" });
+  } else {
+    // Electron can append Chromium switches to the second-instance command line.
+    const selection = process.platform === "win32" ? forwardedExplorerArguments(launch?.explorerSelection) : undefined;
+    if (selection) void acceptExplorerSelection(selection);
+    else bringBack();
+  }
+});
 // macOS: clicking the Dock icon brings the window back.
 app.on("activate", bringBack);
 
@@ -491,7 +559,9 @@ app.on("web-contents-created", (_e, contents) => {
 });
 
 app.whenReady().then(async () => {
-  lockPermissions(session.defaultSession, APP_PERMISSIONS);
+  if (scheduledLaunch && !launcher.optedIn()) { app.quit(); return; }
+  if (process.platform === "win32" && app.isPackaged) app.setAppUserModelId(IDENTITY.appIdentifier);
+  lockPermissions(session.defaultSession, APP_PERMISSIONS, true);
   core = await startCore({
     entry: path.join(distDir, "server", "main.mjs"),
     appVersion: app.getVersion(),
@@ -505,6 +575,8 @@ app.whenReady().then(async () => {
     },
   });
   serveApp();
+  powerMonitor.on("resume", () => core?.emit({ kind: "schedulerTick" }));
+  if (scheduledLaunch) core.emit({ kind: "schedulerTick" });
   if (!captureTo)
     tray = createTray({
       open: openApp,
@@ -520,6 +592,11 @@ app.whenReady().then(async () => {
     mainWindow = createMainWindow();
     watchMainWindow(mainWindow);
     if (captureTo) void capture(mainWindow);
+  }
+  if (initialExplorerSelection) void acceptExplorerSelection(initialExplorerSelection);
+  if (queuedExplorerSelection) {
+    void acceptExplorerSelection(queuedExplorerSelection);
+    queuedExplorerSelection = undefined;
   }
 });
 
