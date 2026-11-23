@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 export async function browserCode(
   open: (redirectUri: string, state: string, challenge: string) => Promise<void>,
   signal: AbortSignal,
+  hostname: "localhost" | "127.0.0.1" = "localhost",
 ): Promise<{ code: string; redirectUri: string; verifier: string }> {
   const lifetime = AbortSignal.any([signal, AbortSignal.timeout(180_000)]);
   lifetime.throwIfAborted();
@@ -47,7 +48,7 @@ export async function browserCode(
     });
     const bound = server.address();
     if (!bound || typeof bound === "string") throw new Error("The sign-in callback did not start.");
-    authority = `localhost:${bound.port}`;
+    authority = `${hostname}:${bound.port}`;
     const redirectUri = `http://${authority}/oauth/callback`;
     lifetime.throwIfAborted();
     await open(redirectUri, state, challenge);

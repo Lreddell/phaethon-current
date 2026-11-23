@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { CalendarAccount, CalendarBusy, CalendarEvent, CalendarInfo, CalendarMutation, CalendarNewEvent, CalendarText } from "#shared/calendar";
+import type { CalendarAccount, CalendarBusy, CalendarEvent, CalendarInfo, CalendarMutation, CalendarNewEvent, CalendarProviderId, CalendarText } from "#shared/calendar";
 import { cleanMessage, FieldError } from "@/components/errors";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
@@ -18,7 +18,8 @@ const startDay = (days = 0) => new Date(Date.now() + days * 86_400_000).toISOStr
 const display = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" });
 const dayStart = (input: string) => `${input}T00:00:00Z`;
 
-function MicrosoftConnection({ view, reload }: { view: CalendarStatus; reload: () => Promise<void> }) {
+function CalendarConnection({ provider, view, reload }: { provider: CalendarProviderId; view: CalendarStatus; reload: () => Promise<void> }) {
+  const microsoft = provider === "microsoft";
   const [clientId, setClientId] = useState("");
   const [pending, setPending] = useState<"sign-in" | "other" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,28 +31,34 @@ function MicrosoftConnection({ view, reload }: { view: CalendarStatus; reload: (
     catch (reason) { setError(cleanMessage(reason)); }
     finally { setPending(null); }
   };
-  const connect = (args: Record<string, unknown>) => change("sign-in", () => invoke("calendar_microsoft_connect", args));
+  const command = (action: "connect" | "cancel" | "disconnect", args?: Record<string, unknown>) => invoke(`calendar_${provider}_${action}`, args);
+  const connect = (args: Record<string, unknown>) => change("sign-in", () => command("connect", args));
   return (
     <>
-      <SettingsGroup label="Microsoft Calendar">
-        {view.accounts.filter((account) => account.provider === "microsoft").map((account) => (
+      <SettingsGroup label={microsoft ? "Microsoft Calendar" : "Google Calendar"}>
+        {view.accounts.filter((account) => account.provider === provider).map((account) => (
           <Row key={account.key} label={account.name} description={`${account.email} · ${account.canWrite ? "Read and edit" : "Read only"}`}>
             <Button size="xs" variant="outline" disabled={pending !== null} onClick={() => void connect({ key: account.key })}>Reconnect</Button>
-            {!account.canWrite ? <Button size="xs" variant="outline" disabled={pending !== null} onClick={() => void connect({ key: account.key, scope: "Calendars.ReadWrite" })}>Enable editing</Button> : null}
+            {!account.canWrite ? <Button size="xs" variant="outline" disabled={pending !== null} onClick={() => void connect(microsoft ? { key: account.key, scope: "Calendars.ReadWrite" } : { key: account.key, editing: true })}>Enable editing</Button> : null}
+            {!microsoft ? <Button size="xs" variant="ghost-muted" disabled={pending !== null} onClick={() => void connect({ key: account.key, replaceClient: true })}>Replace client JSON</Button> : null}
             <Button size="xs" variant="ghost-muted" disabled={pending !== null} onClick={() => setDisconnect(account)}>Disconnect</Button>
           </Row>
         ))}
-        {view.desktop ? (
+        {!view.desktop ? <EmptyRow>Connect an account in the Phaethon desktop app.</EmptyRow> : microsoft ? (
           <Row label="Desktop application ID" description="Use your Entra registration with delegated calendar permissions and the loopback redirect URI http://localhost/oauth/callback.">
             <Input size="sm" aria-label="Microsoft Calendar application ID" className="w-44" value={clientId} onChange={(e) => setClientId(e.target.value)} disabled={pending !== null} />
             <Button size="xs" variant="outline" disabled={pending !== null || !clientId.trim()} onClick={() => void connect({ clientId })}>Connect</Button>
           </Row>
-        ) : <EmptyRow>Connect an account in the Phaethon desktop app.</EmptyRow>}
-        {pending === "sign-in" ? <Row label="Finish sign-in in your browser"><Button size="xs" variant="outline" onClick={() => void invoke("calendar_microsoft_cancel")}>Cancel sign-in</Button></Row> : null}
+        ) : (
+          <Row label="Desktop OAuth client" description="Enable the Google Calendar API in your Google Cloud project and download a Desktop app OAuth client JSON.">
+            <Button size="xs" variant="outline" disabled={pending !== null} onClick={() => void connect({})}>Choose JSON and connect</Button>
+          </Row>
+        )}
+        {pending === "sign-in" ? <Row label="Finish sign-in in your browser"><Button size="xs" variant="outline" onClick={() => void command("cancel")}>Cancel sign-in</Button></Row> : null}
         {error ? <div className="px-3 py-2"><FieldError>{error}</FieldError></div> : null}
       </SettingsGroup>
       <ConfirmDialog open={disconnect !== null} onOpenChange={(open) => { if (!open) setDisconnect(null); }} title={`Disconnect ${disconnect?.name ?? "calendar account"}?`} confirm="Disconnect"
-        onConfirm={() => { if (disconnect) void change("other", () => invoke("calendar_microsoft_disconnect", { key: disconnect.key })); setDisconnect(null); }}>
+        onConfirm={() => { if (disconnect) void change("other", () => command("disconnect", { key: disconnect.key })); setDisconnect(null); }}>
         <p>This removes the local calendar connection.</p>
       </ConfirmDialog>
     </>
@@ -213,7 +220,11 @@ export function CalendarSection() {
   const status = useLoad(loadStatus, [], "calendar:status");
   return (
     <Loader state={status} errorTitle="Couldn’t load calendar connections">
-      {(view) => <><MicrosoftConnection view={view} reload={status.reload} />{view.accounts.length ? <CalendarBrowser accounts={view.accounts} /> : null}</>}
+      {(view) => <>
+        <CalendarConnection provider="microsoft" view={view} reload={status.reload} />
+        <CalendarConnection provider="google" view={view} reload={status.reload} />
+        {view.accounts.length ? <CalendarBrowser accounts={view.accounts} /> : null}
+      </>}
     </Loader>
   );
 }

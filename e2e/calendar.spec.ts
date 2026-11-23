@@ -47,6 +47,8 @@ test("calendar settings require review before creating and deleting events", asy
   core = await startCore();
   await core.open(page);
   await openSettings(page, "Calendar");
+  await expect(page.getByText("Microsoft Calendar", { exact: true })).toBeVisible();
+  await expect(page.getByText("Google Calendar", { exact: true })).toBeVisible();
   await page.getByRole("combobox", { name: "Calendar account" }).click();
   await page.getByRole("option", { name: account.email }).click();
   await page.getByRole("combobox", { name: "Calendar", exact: true }).click();
@@ -57,7 +59,8 @@ test("calendar settings require review before creating and deleting events", asy
   await expect(page.getByRole("heading", { name: "Create this calendar event?" })).toBeVisible();
   expect(applied).toBe(0);
   await page.getByRole("button", { name: "Apply to calendar" }).click();
-  await expect(page.getByText("Fixture appointment", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Create this calendar event?" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Details" })).toBeVisible();
   expect(applied).toBe(1);
 
   await page.getByRole("button", { name: "Busy times" }).click();

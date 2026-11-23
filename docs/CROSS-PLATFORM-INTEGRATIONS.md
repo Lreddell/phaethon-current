@@ -11,13 +11,13 @@ This keeps Electron and provider-specific SDKs out of the agent tool interface. 
 | Capability | Windows | macOS | Linux |
 | --- | --- | --- | --- |
 | Microsoft mailbox | Graph | Graph | Graph |
-| Microsoft calendar | Graph | Graph | Graph |
+| Calendar | Microsoft Graph and Google Calendar API | Microsoft Graph and Google Calendar API | Microsoft Graph and Google Calendar API |
 | Native mail app | Running classic Outlook profile | Apple Mail and legacy Outlook with Automation permission | — |
 | Workflows | Registered PowerShell scripts and attended Power Automate launch | Apple Shortcuts with existing per-space grants | Registered `/bin/sh` scripts |
 | Dictation | Local whisper.cpp and Windows voice typing | Local whisper.cpp and system dictation | Local whisper.cpp and desktop input method, where installed |
 | Background status | Tray, taskbar overlay and notifications | Menu bar, Dock and notifications | Tray and notifications where supported by the desktop |
 
-Dedicated Gmail and IMAP/SMTP sign-in, Google Calendar, OS-backed file indexing and scheduling, Explorer integration, and Windows UI Automation remain open. Existing Phaethon schedules and vault search continue to work.
+Dedicated Gmail and IMAP/SMTP sign-in, OS-backed file indexing and scheduling, Explorer integration, and Windows UI Automation remain open. Existing Phaethon schedules and vault search continue to work.
 
 ## Connect Microsoft mail
 
@@ -29,11 +29,13 @@ Dedicated Gmail and IMAP/SMTP sign-in, Google Calendar, OS-backed file indexing 
 
 For **Classic Outlook for Windows**, open classic Outlook and sign in to the desired profile first. In **Mail & connectors**, enable it, refresh accounts, and assign the account to a space. The adapter uses that account’s delivery store and registered sender. New Outlook does not provide the classic Outlook Object Model. Use Microsoft Graph for Microsoft mail on that client. [Microsoft’s classic and new Outlook comparison](https://support.microsoft.com/en-us/office/feature-comparison-between-new-outlook-and-classic-outlook-de453583-1e76-48bf-975a-2e9cd2ee16dd).
 
-## Connect Microsoft Calendar
+## Connect a calendar
 
 In **Settings → Calendar**, enter a Microsoft Entra desktop application ID and select **Connect**. The app registration uses the same loopback redirect as Microsoft mail. Calendar sign-in has its own local connection and requests `Calendars.Read`. To add editing, configure delegated `Calendars.ReadWrite` in Entra and select **Enable editing** on the connected account. [Microsoft Graph calendar permissions](https://learn.microsoft.com/en-us/graph/permissions-reference#calendarsread).
 
-Choose an account, a calendar and a date range to see events, search the results, or check busy times. The view displays UTC and the event details show the original time zone when the provider supplies it. When editing is enabled, you can create single or weekly events with no attendees. For events you organize with no attendees, you can change the title, location and description or delete the event. Use the original calendar app to change existing times, edit recurring series, or manage invitations. Every change has a review step and creating an identical event again within 24 hours returns the earlier result. [Microsoft Graph transaction IDs](https://learn.microsoft.com/en-us/graph/api/resources/event?view=graph-rest-1.0#properties).
+For Google Calendar, enable the Calendar API in a Google Cloud project and configure its OAuth consent screen. Create a **Desktop app** OAuth client and download its JSON. In **Settings → Calendar → Google Calendar**, select **Choose JSON and connect** and finish sign-in in the browser. Phaethon stores the client credential and refresh token in the OS keychain. If the project is in testing mode, add the intended account as a test user. A public app may require Google verification or Workspace administrator approval. **Enable editing** starts a new consent flow for event writes. [Google desktop OAuth](https://developers.google.com/identity/protocols/oauth2/native-app) and [Calendar scopes](https://developers.google.com/workspace/calendar/api/auth).
+
+Choose an account, a calendar and a date range to see events, search the results, or check busy times. The view displays UTC and the event details show the original time zone when the provider supplies it. When editing is enabled, you can create single or weekly events with no attendees. For events you organize with no attendees, you can change the title, location and description or delete the event. Use the original calendar app to change existing times, edit recurring series, or manage invitations. Every change has a review step and creating an identical event again within 24 hours returns the earlier result. [Microsoft Graph transaction IDs](https://learn.microsoft.com/en-us/graph/api/resources/event?view=graph-rest-1.0#properties) and [Google conditional changes](https://developers.google.com/workspace/calendar/api/guides/version-resources).
 
 ## Register a local workflow
 

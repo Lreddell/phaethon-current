@@ -8,10 +8,13 @@ import { graphCalendarAuth } from "../integrations/graph-auth.ts";
 import { Providers } from "../integrations/registry.ts";
 import { host } from "../host.ts";
 import { commands, Refusal } from "../rpc/registry.ts";
+import { GoogleCalendar, googleCalendarAuth } from "./google.ts";
 import { MicrosoftCalendar } from "./microsoft.ts";
 import type { CalendarProvider } from "./types.ts";
 
-const providers = new Providers<CalendarProviderId, CalendarProvider>().register("microsoft", () => new MicrosoftCalendar());
+const providers = new Providers<CalendarProviderId, CalendarProvider>()
+  .register("microsoft", () => new MicrosoftCalendar())
+  .register("google", () => new GoogleCalendar());
 const providersForSession = () => (override ? [override] : providers.ids().map((id) => providers.get(id)));
 let override: CalendarProvider | undefined;
 export function setCalendarProviderForTest(provider: CalendarProvider | undefined) { override = provider; }
@@ -124,6 +127,12 @@ commands({
   },
   calendar_microsoft_disconnect: ({ key }: { key: string }) => graphCalendarAuth.disconnect(key),
   calendar_microsoft_cancel: () => graphCalendarAuth.cancel(),
+  calendar_google_connect: (input: { key?: unknown; editing?: unknown; replaceClient?: unknown }, ctx) => {
+    authorizeIntegration("modify", "user", host().available);
+    return googleCalendarAuth.connect(input, ctx.signal);
+  },
+  calendar_google_disconnect: ({ key }: { key: string }) => googleCalendarAuth.disconnect(key),
+  calendar_google_cancel: () => googleCalendarAuth.cancel(),
   calendar_list: ({ account }: { account: unknown }, ctx) => {
     const selected = resolve(account);
     return selected.provider.calendars(selected.account.key, ctx.signal);
@@ -142,7 +151,10 @@ commands({
   calendar_availability: async ({ account, calendar, start, end }: { account: unknown; calendar: unknown; start: unknown; end: unknown }, ctx) => {
     const selected = resolve(account);
     const range = calendarRange(start, end);
-    return busyTimes(await selected.provider.events(selected.account.key, id(calendar), range, ctx.signal), range);
+    const target = id(calendar);
+    return selected.provider.availability
+      ? selected.provider.availability(selected.account.key, target, range, ctx.signal)
+      : busyTimes(await selected.provider.events(selected.account.key, target, range, ctx.signal), range);
   },
   calendar_review: async (raw: Record<string, unknown>, ctx) => {
     if (!raw || !["create", "update", "delete"].includes(String(raw.kind))) throw new Refusal("Choose a calendar action.");
