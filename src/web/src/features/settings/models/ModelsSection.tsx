@@ -641,7 +641,7 @@ export function ModelsSection() {
               <SwitchRow
                 label={C.fallback.label}
                 description={C.fallback.description}
-                checked={settings.autoFallback ?? true}
+                checked={settings.autoFallback ?? false}
                 pending={fallbackBusy}
                 onCheckedChange={(checked) => void toggleFallback(data, checked)}
               />

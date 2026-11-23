@@ -55,7 +55,7 @@ export const DEFAULT_SETTINGS: Readonly<VaultSettings> = Object.freeze({
   model: null,
   effort: null,
   provider: null,
-  autoFallback: true,
+  autoFallback: false,
 });
 
 export function settingsFile(): string {

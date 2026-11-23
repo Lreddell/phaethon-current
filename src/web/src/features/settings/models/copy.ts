@@ -114,7 +114,7 @@ export const MODELS_COPY = {
 
   fallback: {
     label: "Switch to another model automatically",
-    description: "If a model fails, Phaethon switches to another model you’ve set up and notes which one took over.",
+    description: "If a model fails, another connection may receive this conversation and its attachments. Phaethon shows which connection took over.",
     failed: "Couldn’t update this setting",
   },
 

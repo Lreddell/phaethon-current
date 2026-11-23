@@ -79,7 +79,7 @@ let generation = 0;
 
 export const useCatalog = create<Catalog>((set, get) => ({
   status: "idle",
-  autoFallback: true,
+  autoFallback: false,
   groups: [],
 
   async load(force = false) {
@@ -143,7 +143,7 @@ export const useCatalog = create<Catalog>((set, get) => ({
         return 0;
       });
 
-      set({ status: "ready", settings, autoFallback: settings.autoFallback ?? true, groups });
+      set({ status: "ready", settings, autoFallback: settings.autoFallback ?? false, groups });
     } catch (e) {
       if (current === generation) set({ status: "error", error: errorText(e) });
     }

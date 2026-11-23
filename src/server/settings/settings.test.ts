@@ -76,9 +76,9 @@ describe("vault settings", () => {
     expect((await call<Record<string, unknown>>("settings_get")).appearance).toEqual({});
   });
 
-  it("defaults autoFallback to true and round-trips through settings_set_auto_fallback", async () => {
-    expect(readSettings().autoFallback).toBe(true);
-    expect((await call<Record<string, unknown>>("settings_get")).autoFallback).toBe(true);
+  it("defaults autoFallback to false and round-trips through settings_set_auto_fallback", async () => {
+    expect(readSettings().autoFallback).toBe(false);
+    expect((await call<Record<string, unknown>>("settings_get")).autoFallback).toBe(false);
 
     await call("settings_set_auto_fallback", { enabled: false });
     expect(readSettings().autoFallback).toBe(false);
@@ -89,7 +89,7 @@ describe("vault settings", () => {
     expect((await call<Record<string, unknown>>("settings_get")).autoFallback).toBe(true);
 
     writeSettings(JSON.stringify({ autoFallback: "nope" }));
-    expect(readSettings().autoFallback).toBe(true);
+    expect(readSettings().autoFallback).toBe(false);
   });
 });
 
