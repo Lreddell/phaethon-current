@@ -26,6 +26,7 @@ const NotificationsSection = lazy(() => import("./NotificationsSection").then((m
 const MemorySection = lazy(() => import("./life/MemorySection").then((m) => ({ default: m.MemorySection })));
 const PeopleSection = lazy(() => import("./life/PeopleSection").then((m) => ({ default: m.PeopleSection })));
 const MailSection = lazy(() => import("./life/MailSection").then((m) => ({ default: m.MailSection })));
+const CalendarSection = lazy(() => import("./life/CalendarSection").then((m) => ({ default: m.CalendarSection })));
 const AutomationsSection = lazy(() => import("./life/AutomationsSection").then((m) => ({ default: m.AutomationsSection })));
 
 /**
@@ -46,6 +47,7 @@ export const SECTIONS: { id: SettingsSection; label: string; icon: IconData; gro
   { id: "memory", label: "Memory", icon: icons.memory, group: "You" },
   { id: "people", label: "People", icon: icons.people, group: "You" },
   { id: "mail", label: "Mail & connectors", icon: icons.mail, group: "You" },
+  { id: "calendar", label: "Calendar", icon: icons.event, group: "You" },
   { id: "automations", label: "Automations", icon: icons.automation, group: "You" },
   { id: "privacy", label: "Privacy", icon: icons.locked, group: "Phaethon" },
   { id: "about", label: "About", icon: icons.info, group: "Phaethon" },
@@ -207,6 +209,8 @@ function Body({ section }: { section: SettingsSection }) {
       return <PrivacySection />;
     case "general":
       return <GeneralSection />;
+    case "calendar":
+      return <Suspense fallback={null}><CalendarSection /></Suspense>;
     case "models":
     case "providers":
     case "agents":
