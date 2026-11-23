@@ -39,6 +39,9 @@ describe("vault settings", () => {
     writeFileAtomic(settingsFile(), '{"backend":"gemini-cli"}');
     fs.utimesSync(settingsFile(), time, time);
     expect(readSettings().backend).toBe("gemini-cli");
+    writeSettings('{"backend":"claude-cli"}');
+    fs.utimesSync(settingsFile(), time, time);
+    expect(readSettings().backend).toBe("claude-cli");
   });
 
   it("keeps the other settings when one field has the wrong type (fixed Rust bug)", () => {

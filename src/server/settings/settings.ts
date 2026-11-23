@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { fileStamp, isNotFound, writeJsonAtomic } from "../core/fsx.ts";
+import { isNotFound, writeJsonAtomic } from "../core/fsx.ts";
 import { vaultStateDir } from "../core/vault.ts";
 
 /**
@@ -75,34 +75,24 @@ function optString(value: unknown): string | null | undefined {
 
 const RAW_KEYS = ["agentInstances", "activeAgentInstances", "providerModels", "providerUrls", "appearance", "lastModel", "allowWrites", "memory", "digest", "notifications", "background"] as const;
 
-let settingsCache: { file: string; stamp: string; value: VaultSettings } | undefined;
+let settingsCache: { file: string; text: string; value: VaultSettings } | undefined;
 
 /** Every setting, with defaults for missing or wrongly typed fields. Never throws. */
 export function readSettings(): VaultSettings {
   const out: VaultSettings = { ...DEFAULT_SETTINGS };
   const file = settingsFile();
-  let st: fs.BigIntStats;
-  try {
-    st = fs.statSync(file, { bigint: true });
-  } catch {
-    if (settingsCache?.file === file) settingsCache = undefined;
-    return out;
-  }
-  const stamp = fileStamp(st);
-  if (settingsCache && settingsCache.file === file && settingsCache.stamp === stamp) {
-    return { ...settingsCache.value };
-  }
   let text: string;
   try {
     text = fs.readFileSync(file, "utf8");
   } catch {
+    if (settingsCache?.file === file) settingsCache = undefined;
     return out;
   }
+  if (settingsCache?.file === file && settingsCache.text === text) return { ...settingsCache.value };
   // Token names before the rename, anywhere in the file (as the Rust core did); not written back.
-  text = text.replaceAll('"--st-', '"--ph-');
   let doc: unknown;
   try {
-    doc = JSON.parse(text);
+    doc = JSON.parse(text.replaceAll('"--st-', '"--ph-'));
   } catch {
     return out;
   }
@@ -114,7 +104,7 @@ export function readSettings(): VaultSettings {
   for (const key of ["model", "effort", "provider"] as const) out[key] = optString(o[key]) ?? null;
   // serde's Option<Value> reads JSON null as absent.
   for (const key of RAW_KEYS) if (o[key] !== undefined && o[key] !== null) out[key] = o[key];
-  settingsCache = { file, stamp, value: out };
+  settingsCache = { file, text, value: out };
   return { ...out };
 }
 
