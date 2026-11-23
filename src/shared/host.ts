@@ -39,6 +39,7 @@ export type HostOp =
   | { op: "desktopFlowAvailable" }
   | { op: "desktopFlowLaunch"; environmentId: string; workflowId: string; runId: string }
   | { op: "backgroundLauncher"; action: SchedulerAction }
+  | { op: "explorerLink"; action: "status" | "enable" | "disable" }
   /** Opens a sign-in window with its own cookie partition. Resolves with a window id. */
   | { op: "windowOpen"; url: string; title: string; partition: string; width?: number; height?: number }
   /** Cookies the window's session holds for `url`, or every cookie it holds when `url` is left out. */
@@ -130,6 +131,7 @@ export type HostEventBody =
   | { kind: "windowClosed"; window: number }
   | { kind: "quitting" }
   | { kind: "schedulerTick" }
+  | { kind: "explorerSelection"; paths: string[]; skipped: number }
   /** Download progress of `updateDownload`, in bytes (`total` when the server said). */
   | { kind: "updateProgress"; received: number; total: number | null }
   /** A menu-bar item was chosen. */

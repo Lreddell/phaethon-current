@@ -28,6 +28,7 @@ const PeopleSection = lazy(() => import("./life/PeopleSection").then((m) => ({ d
 const MailSection = lazy(() => import("./life/MailSection").then((m) => ({ default: m.MailSection })));
 const CalendarSection = lazy(() => import("./life/CalendarSection").then((m) => ({ default: m.CalendarSection })));
 const AutomationsSection = lazy(() => import("./life/AutomationsSection").then((m) => ({ default: m.AutomationsSection })));
+const DesktopSection = lazy(() => import("./DesktopSection").then((m) => ({ default: m.DesktopSection })));
 
 /**
  * Settings is a page inside the shell (docs/UI-REBUILD.md › Settings, after
@@ -41,6 +42,7 @@ export const SECTIONS: { id: SettingsSection; label: string; icon: IconData; gro
   { id: "general", label: "General", icon: icons.mode, group: "Preferences" },
   { id: "appearance", label: "Appearance", icon: icons.appearance, group: "Preferences" },
   { id: "notifications", label: "Notifications", icon: icons.notifications, group: "Preferences" },
+  { id: "desktop", label: "Desktop integrations", icon: icons.folderOpen, group: "Preferences" },
   { id: "models", label: "AI & Models", icon: icons.model, group: "Models" },
   { id: "spaces", label: "Spaces", icon: icons.deck, group: "Workspace" },
   { id: "courses", label: "Courses", icon: icons.courses, group: "Workspace" },
@@ -211,6 +213,8 @@ function Body({ section }: { section: SettingsSection }) {
       return <GeneralSection />;
     case "calendar":
       return <Suspense fallback={null}><CalendarSection /></Suspense>;
+    case "desktop":
+      return <Suspense fallback={null}><DesktopSection /></Suspense>;
     case "models":
     case "providers":
     case "agents":

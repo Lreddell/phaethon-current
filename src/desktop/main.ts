@@ -8,6 +8,8 @@ import { desktopFlowRunUrl } from "../shared/desktop-flow.ts";
 import type { AppNotification, AppTarget, HostOp, TrayState } from "../shared/host.ts";
 import { SCHEDULER_FLAG } from "../shared/os-scheduler.ts";
 import { BackgroundLauncher } from "./background-launcher.ts";
+import { explorerArguments, forwardedExplorerArguments } from "./explorer-arguments.ts";
+import { ExplorerLink } from "./explorer-link.ts";
 import { createTray } from "./tray.ts";
 import { desktopStatus, describeStatus, windowsOverlay } from "./windows-status.ts";
 import { startCore, type CoreProcess } from "./core-process.ts";
@@ -51,14 +53,17 @@ if (CHANNEL === "dev") {
 // a throwaway browser profile, so a capture never reads or leaves state in the app's real one.
 if (captureTo) app.setPath("userData", process.env.PHAETHON_CAPTURE_PROFILE || fs.mkdtempSync(path.join(os.tmpdir(), "phaethon-capture-")));
 const scheduledLaunch = process.argv.includes(SCHEDULER_FLAG);
+const initialExplorerSelection = process.platform === "win32" ? explorerArguments(process.argv) : undefined;
 const launcher = new BackgroundLauncher(() => app.getPath("userData"), app.isPackaged && !captureTo);
-if (!captureTo && !app.requestSingleInstanceLock({ scheduledLaunch })) {
+const explorer = new ExplorerLink(app.isPackaged && !captureTo);
+if (!captureTo && !app.requestSingleInstanceLock({ scheduledLaunch, explorerSelection: initialExplorerSelection ?? null })) {
   app.quit();
 }
 
 const distDir = path.join(__dirname, "..");
 const webRoot = path.join(distDir, "web");
 let core: CoreProcess | undefined;
+let queuedExplorerSelection: NonNullable<ReturnType<typeof explorerArguments>> | undefined;
 let mainWindow: BrowserWindow | undefined;
 const signInWindows = new Map<number, BrowserWindow>();
 let quitting = false;
@@ -292,6 +297,8 @@ async function handle(op: HostOp): Promise<unknown> {
   switch (op.op) {
     case "backgroundLauncher":
       return launcher.configure(op.action);
+    case "explorerLink":
+      return explorer.change(op.action);
     case "pickFolder": {
       const parent = parentWindow();
       const options = { title: op.title, defaultPath: op.defaultPath, properties: ["openDirectory", "createDirectory"] as Array<"openDirectory" | "createDirectory"> };
@@ -526,10 +533,23 @@ function bringBack(): void {
   mainWindow.focus();
 }
 
+async function acceptExplorerSelection(selection: NonNullable<ReturnType<typeof explorerArguments>>): Promise<void> {
+  if (!core) { queuedExplorerSelection = selection; return; }
+  if ((await explorer.change("status")).state !== "active" || !core || quitting) return;
+  openApp();
+  core.emit({ kind: "explorerSelection", ...selection });
+}
+
 app.on("second-instance", (_event, _args, _cwd, data) => {
-  if ((data as { scheduledLaunch?: boolean } | null)?.scheduledLaunch === true) {
+  const launch = data as { scheduledLaunch?: boolean; explorerSelection?: unknown } | null;
+  if (launch?.scheduledLaunch === true) {
     if (launcher.optedIn()) core?.emit({ kind: "schedulerTick" });
-  } else bringBack();
+  } else {
+    // Electron can append Chromium switches to the second-instance command line.
+    const selection = process.platform === "win32" ? forwardedExplorerArguments(launch?.explorerSelection) : undefined;
+    if (selection) void acceptExplorerSelection(selection);
+    else bringBack();
+  }
 });
 // macOS: clicking the Dock icon brings the window back.
 app.on("activate", bringBack);
@@ -572,6 +592,11 @@ app.whenReady().then(async () => {
     mainWindow = createMainWindow();
     watchMainWindow(mainWindow);
     if (captureTo) void capture(mainWindow);
+  }
+  if (initialExplorerSelection) void acceptExplorerSelection(initialExplorerSelection);
+  if (queuedExplorerSelection) {
+    void acceptExplorerSelection(queuedExplorerSelection);
+    queuedExplorerSelection = undefined;
   }
 });
 

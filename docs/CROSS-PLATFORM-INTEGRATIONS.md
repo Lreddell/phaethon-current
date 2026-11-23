@@ -18,8 +18,9 @@ This keeps Electron and provider-specific SDKs out of the agent tool interface. 
 | Dictation | Local whisper.cpp and Windows voice typing | Local whisper.cpp and system dictation | Local whisper.cpp and desktop input method, where installed |
 | Background status | Tray, taskbar overlay and notifications | Menu bar, Dock and notifications | Tray and notifications where supported by the desktop |
 | Background relaunch for scheduled tasks | Optional Windows Task Scheduler registration | Schedules while the app runs | Schedules while the app runs |
+| Shell import | Optional File Explorer Send to shortcut | Desktop file picker and drag-and-drop | Desktop file picker and drag-and-drop |
 
-Dedicated Gmail and IMAP/SMTP sign-in, macOS and Linux scheduled relaunch, Explorer integration, and Windows UI Automation remain open.
+Dedicated Gmail and IMAP/SMTP sign-in, macOS and Linux scheduled relaunch, and Windows UI Automation remain open.
 
 ## Connect Microsoft mail
 
@@ -56,6 +57,12 @@ On Windows, **Settings → Automations → Power Automate for desktop** accepts 
 In the packaged Windows app, enable **Settings → Notifications → Relaunch for scheduled tasks** to register a per-user task for the current Phaethon installation. Windows checks every 15 minutes while that user is signed in. The task starts Phaethon without a window when it was closed. It sends a scheduler check to Phaethon if it was already running. The task does not wake a sleeping computer. Phaethon checks schedules on resume. Use **Turn off** to remove the task or **Repair** if the registration changed. A normal uninstall removes the task and its opt-in marker. [Windows Task Scheduler settings](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings).
 
 Phaethon owns the schedules and job permissions. It runs the latest missed slot within 24 hours, skips nonexistent local times when clocks move forward, and uses the first occurrence of repeated local times. A job interrupted by a process exit is shown as interrupted and is eligible for its next slot. Existing checks for paused automations, model access and unattended operations still apply.
+
+## Import from File Explorer
+
+In the packaged Windows app, open **Settings → Desktop integrations → Add shortcut**. In File Explorer, select files and choose **Show more options → Send to → Phaethon - Import files**. Phaethon shows the filenames and asks for a destination Space before copying. The request accepts up to 20 regular local files totaling up to 256 MB. Files already in the vault, directories, network paths, and symbolic links are skipped. The original files stay in place. [Windows Send To known folder](https://learn.microsoft.com/windows/win32/shell/knownfolderid) and [Electron shortcut creation](https://www.electronjs.org/docs/latest/api/shell#shellwriteshortcutlinkshortcutpath-operation-options-windows).
+
+Choose **Remove shortcut** to unregister it or **Repair** after moving the app. The shortcut belongs to the current Windows user and is removed by normal uninstall. The Windows package was tested by selecting two fixture files in File Explorer, reviewing them in Phaethon, checking identical copies in a disposable Space, and removing the shortcut.
 
 ## Dictate a chat message locally
 

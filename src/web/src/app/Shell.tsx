@@ -4,6 +4,7 @@ import { DotMatrix } from "@/components/art";
 import { toast } from "@/components/toast";
 import { ChatView } from "@/features/chat/ChatView";
 import { Channel, errorText, invoke } from "@/lib/core";
+import { invalidate } from "@/lib/query";
 import { cn } from "@/lib/utils";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import type { SpaceView } from "./api";
@@ -75,7 +76,10 @@ function useAppEvents() {
       const nav = useNav.getState();
       const t = e.target;
       if (t.kind === "thread") void nav.openThread(t.space, t.thread).catch(() => {});
-      else if (t.kind === "settings") nav.openSettings(t.section as SettingsSection);
+      else if (t.kind === "settings") {
+        if (t.section === "desktop") invalidate("explorer:pending");
+        nav.openSettings(t.section as SettingsSection);
+      }
       else if (t.kind === "space") nav.selectSpace(t.space, t.view as View | undefined);
     });
     void invoke("app_events", { onEvent: ch }).catch(() => {});
