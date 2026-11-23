@@ -9,6 +9,7 @@ import { icons } from "@/components/icons";
 import { toast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { FileIcon, kindOfName } from "@/features/viewer/FileIcon";
+import { SpeechInput } from "@/features/speech/SpeechInput";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
 import { Menu, MenuGroup, MenuGroupLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuRadioItemIndicator, MenuTrigger } from "@/components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
@@ -442,6 +443,11 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
             <TooltipPopup>Attach files · images, PDFs, Word, text</TooltipPopup>
           </Tooltip>
           <input ref={picker} type="file" multiple hidden onChange={(e) => (add([...(e.target.files ?? [])]), (e.target.value = ""))} />
+          <SpeechInput key={draftKey} disabled={busy || status !== "open"} focusComposer={() => area.current?.focus()} openSetup={() => openSettings("general")}
+            onTranscript={(transcript) => {
+              const next = `${text.trimEnd()}${text.trim() ? " " : ""}${transcript}`;
+              putText(next, next.length);
+            }} />
           {space.educationEnabled ? <TutorPicker mode={tutor.mode} setMode={(m) => tutor.setMode(m)} disabled={busy} /> : null}
           <div className="ml-auto flex min-w-0 items-center gap-1">
             {dataControls}

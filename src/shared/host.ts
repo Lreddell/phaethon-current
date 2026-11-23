@@ -54,6 +54,8 @@ export type HostOp =
   | { op: "updateInstall" }
   /** macOS: starts the system's dictation in the focused field. */
   | { op: "dictationStart" }
+  | { op: "microphoneGrant"; id: string }
+  | { op: "microphoneRelease"; id: string }
   /** Diagnostics: a PNG of the main window to $PHAETHON_SNAPSHOT_PATH, only when main's own environment names one. */
   | { op: "snapshot" }
   /** A system notification. Resolves with whether it was shown (one marked `whenAway` isn't while a Phaethon window has focus). */

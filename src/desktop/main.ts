@@ -137,14 +137,24 @@ function hardenContents(window: BrowserWindow, allowedOrigin: string): void {
   window.webContents.on("will-attach-webview", (event) => event.preventDefault());
 }
 
-/**
- * Web permissions are denied unless listed: the app's own pages only copy to
- * the clipboard and show video full screen, and course-site sign-in pages need nothing (no
- * camera, microphone, location, notifications or devices).
- */
-function lockPermissions(target: Electron.Session, allowed: ReadonlySet<string>): void {
-  target.setPermissionRequestHandler((_wc, permission, callback) => callback(allowed.has(permission)));
-  target.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
+let microphone: { id: string; contents: number; expires: number } | undefined;
+
+function mayCapture(contents: Electron.WebContents | null, url: string, mainFrame: boolean): boolean {
+  if (!mainFrame || !contents || contents !== mainWindow?.webContents || !microphone || microphone.contents !== contents.id || microphone.expires <= Date.now()) return false;
+  try {
+    const page = new URL(url);
+    return page.protocol === `${SCHEME}:` && page.host === "phaethon" && !page.username && !page.password;
+  } catch { return false; }
+}
+
+/** The main composer can request audio under a short grant created by the core. Sign-in partitions get no media permissions. */
+function lockPermissions(target: Electron.Session, allowed: ReadonlySet<string>, appSession = false): void {
+  target.setPermissionRequestHandler((wc, permission, callback, details) => {
+    if (permission !== "media") return callback(allowed.has(permission));
+    callback(appSession && "mediaTypes" in details && details.mediaTypes?.length === 1 && details.mediaTypes[0] === "audio" && mayCapture(wc, details.requestingUrl, details.isMainFrame));
+  });
+  target.setPermissionCheckHandler((wc, permission, origin, details) => permission === "media"
+    ? appSession && details.mediaType === "audio" && mayCapture(wc, origin, details.isMainFrame) : allowed.has(permission));
   target.setDevicePermissionHandler(() => false);
 }
 const APP_PERMISSIONS = new Set(["clipboard-sanitized-write", "fullscreen"]);
@@ -311,6 +321,14 @@ async function handle(op: HostOp): Promise<unknown> {
     case "desktopFlowLaunch":
       if (process.platform !== "win32") throw new Error("Power Automate for desktop requires Windows.");
       await shell.openExternal(desktopFlowRunUrl(op.environmentId, op.workflowId, op.runId));
+      return null;
+    case "microphoneGrant":
+      if (!mainWindow?.isFocused() || !mainWindow.isVisible() || captureTo || !/^[0-9a-f-]{36}$/i.test(op.id))
+        throw new Error("Focus Phaethon’s composer before recording.");
+      microphone = { id: op.id, contents: mainWindow.webContents.id, expires: Date.now() + 30_000 };
+      return null;
+    case "microphoneRelease":
+      if (microphone?.id === op.id) microphone = undefined;
       return null;
     case "openExternal":
       if (!isSafeExternal(op.url)) throw new Error("Only web and mail links open outside Phaethon.");
@@ -512,7 +530,7 @@ app.on("web-contents-created", (_e, contents) => {
 
 app.whenReady().then(async () => {
   if (process.platform === "win32" && app.isPackaged) app.setAppUserModelId(IDENTITY.appIdentifier);
-  lockPermissions(session.defaultSession, APP_PERMISSIONS);
+  lockPermissions(session.defaultSession, APP_PERMISSIONS, true);
   core = await startCore({
     entry: path.join(distDir, "server", "main.mjs"),
     appVersion: app.getVersion(),

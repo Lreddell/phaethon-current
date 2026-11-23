@@ -13,10 +13,10 @@ This keeps Electron and provider-specific SDKs out of the agent tool interface. 
 | Microsoft mailbox | Graph | Graph | Graph |
 | Native mail app | Running classic Outlook profile | Apple Mail and legacy Outlook with Automation permission | — |
 | Workflows | Registered PowerShell scripts and attended Power Automate launch | Apple Shortcuts with existing per-space grants | Registered `/bin/sh` scripts |
-| Dictation | Windows voice typing from the focused message box | System dictation | Desktop input method, where installed |
+| Dictation | Local whisper.cpp and Windows voice typing | Local whisper.cpp and system dictation | Local whisper.cpp and desktop input method, where installed |
 | Background status | Tray, taskbar overlay and notifications | Menu bar, Dock and notifications | Tray and notifications where supported by the desktop |
 
-The current work covers Microsoft mail and registered local workflows. Dedicated Gmail and IMAP/SMTP sign-in, local speech recognition, calendar connectors, OS-backed file indexing and scheduling, Explorer integration, and Windows UI Automation remain open. Existing Phaethon schedules and vault search continue to work.
+The current work covers Microsoft mail, registered local workflows, and local speech. Dedicated Gmail and IMAP/SMTP sign-in, calendar connectors, OS-backed file indexing and scheduling, Explorer integration, and Windows UI Automation remain open. Existing Phaethon schedules and vault search continue to work.
 
 ## Connect Microsoft mail
 
@@ -36,6 +36,14 @@ For example, a PowerShell script can read input with `[Console]::In.ReadToEnd() 
 
 On Windows, **Settings → Automations → Power Automate for desktop** accepts the run URL from a flow’s Properties panel. The URL must contain the environment ID and flow ID. **Open flow** requests an attended run. Power Automate handles sign-in, licensing, input prompts, confirmation, cancellation and completion. Phaethon records when it requested the launch and labels it accordingly. Check the Power Automate console for the result. A real run requires a signed-in, licensed installation and access to the registered flow. [Microsoft desktop flow run URLs](https://learn.microsoft.com/en-us/power-automate/desktop-flows/run-desktop-flows-url-shortcuts).
 
+## Dictate a chat message locally
+
+1. Install or extract whisper.cpp for your operating system. On Windows x64, the official CPU/BLAS archive includes `whisper-cli.exe`. Keep the executable with its required libraries. On macOS and Linux, select `whisper-cli` from a local installation or build. [whisper.cpp releases and build instructions](https://github.com/ggml-org/whisper.cpp).
+2. Open **Settings → General → Voice input**. Choose and review the executable, then select **Download model**. Phaethon downloads the 32.2 MB Whisper Tiny multilingual model and checks its size and SHA-256 before activating it. Pick a spoken language or leave detection automatic. Model and engine settings are device-local. [Model source and SHA-256](https://huggingface.co/ggerganov/whisper.cpp/blob/main/ggml-tiny-q5_1.bin).
+3. Select **Record voice for this message** in the composer. **Stop recording** starts CPU transcription. **Cancel** discards the clip or stops a transcription in progress. A clip lasts up to 60 seconds. Review and edit the inserted text before sending it.
+
+You can also focus the message box and use `Win+H` for Windows voice typing. The NSIS installer has no MSIX package identity, which the Windows Runtime speech recognition API requires. On macOS, system dictation remains available through its configured shortcut. [Windows speech recognition requirements](https://learn.microsoft.com/en-us/windows/apps/develop/input/speech-recognition).
+
 ## Permissions and migration
 
 - Graph uses browser-based authorization with PKCE, state validation, and a loopback callback. Tokens stay in the OS credential store. The local metadata file records connection identifiers, display fields and granted scopes. Its namespace is scoped to the vault path and app channel. The Graph API client constrains request destinations and refuses redirects.
@@ -45,6 +53,7 @@ On Windows, **Settings → Automations → Power Automate for desktop** accepts 
 - Course downloads validate public addresses on off-site hops. Session cookies and cache validators stay on the configured course site. The public icon fetcher follows same-origin redirects and bounds the icon size.
 - Mac course sign-in still uses the existing Chromium profile and credential storage. Changing its keychain behavior needs a migration and signed-build verification. The Graph connector uses a separate credential-store namespace.
 - Registered scripts run with the current user’s permissions. Phaethon verifies the approved file’s hash before launch and passes structured input through standard input. Trust in dependencies the script loads remains with the user. Script registration is device-local. Existing Shortcuts grants and schedules retain their original storage.
+- Local speech grants audio-only capture to the trusted main frame for a short window after a user click. Course-login windows keep their existing denial policy. The core accepts a bounded PCM recording, runs the selected executable, and cleans up temporary audio and output. The model download transfers model weights only. The composer receives the editable text and awaits a separate send action. [Electron media permission checks](https://www.electronjs.org/docs/latest/api/session#sessetpermissioncheckhandlerhandler).
 - The installer uses the existing Electron configuration. Microsoft Graph adds a packaged JavaScript dependency. Classic Outlook and Windows PowerShell use installed OS components. The Windows tray, overlay, and icon extraction for a registered classic Outlook installation use Electron native APIs. [Electron taskbar overlay](https://www.electronjs.org/docs/latest/api/browser-window#winsetoverlayiconoverlay-description-windows), [Electron application icons](https://www.electronjs.org/docs/latest/api/app#appgetfileiconpath-options), and [Windows App Paths registration](https://learn.microsoft.com/en-us/windows/win32/shell/app-registration).
 
 ## Verification scope

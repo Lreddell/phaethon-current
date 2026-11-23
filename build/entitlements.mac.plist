@@ -12,5 +12,7 @@
     <!-- Mail & connectors: Apple Mail, Outlook and Shortcuts through Apple Events (src/server/mail). -->
     <key>com.apple.security.automation.apple-events</key>
     <true/>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
   </dict>
 </plist>

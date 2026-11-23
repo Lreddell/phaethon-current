@@ -7,6 +7,7 @@ import "./spaces/storage.ts";
 import "./system/commands.ts";
 import "./latex/commands.ts";
 import "./voice/commands.ts";
+import "./voice/local.ts";
 import "./diagnostics/commands.ts";
 import "./telemetry/commands.ts";
 import "./updater/commands.ts";

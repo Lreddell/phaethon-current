@@ -7,7 +7,7 @@ import { appDataDir } from "../env.ts";
 import { host } from "../host.ts";
 import { commands, Refusal } from "../rpc/registry.ts";
 import { authorizeIntegration } from "./policy.ts";
-import { runNative, windowsPowerShell } from "./native-process.ts";
+import { nativeEnvironment, runNative, windowsPowerShell } from "./native-process.ts";
 import { Providers } from "./registry.ts";
 
 type ScriptProvider = { executable: string; extension: string; args: (file: string) => string[] };
@@ -102,11 +102,6 @@ function register(token: unknown): WorkflowRegistration {
   return record;
 }
 
-const scriptEnvironment = () => {
-  const base = new Set(["APPDATA", "COMMONPROGRAMFILES", "COMPUTERNAME", "HOME", "LANG", "LOCALAPPDATA", "LOGNAME", "OS", "PATH", "PROGRAMDATA", "PROGRAMFILES", "PROGRAMFILES(X86)", "SYSTEMDRIVE", "SYSTEMROOT", "TEMP", "TMP", "TMPDIR", "USER", "USERNAME", "USERPROFILE", "WINDIR"]);
-  return Object.fromEntries(Object.entries(process.env).filter(([name]) => base.has(name.toUpperCase())));
-};
-
 async function run(id: string, digest: string, raw: unknown, requester: AbortSignal): Promise<{ run: WorkflowRun; output?: string; error?: string }> {
   const workflow = state().workflows.find((w) => w.id === id);
   if (!workflow || workflow.digest !== digest) throw new Refusal("Review the current workflow before running it.");
@@ -127,7 +122,7 @@ async function run(id: string, digest: string, raw: unknown, requester: AbortSig
   const timeout = AbortSignal.timeout(TIMEOUT_MS);
   try {
     const output = await runNative(provider.executable, provider.args(workflow.path), JSON.stringify(input), AbortSignal.any([requester, controller.signal, timeout]),
-      { cwd: path.dirname(workflow.path), env: scriptEnvironment() });
+      { cwd: path.dirname(workflow.path), env: nativeEnvironment() });
     record.status = "completed";
     return { run: record, output: output.slice(0, 20_000) };
   } catch {
