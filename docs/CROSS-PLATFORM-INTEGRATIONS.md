@@ -17,8 +17,9 @@ This keeps Electron and provider-specific SDKs out of the agent tool interface. 
 | Workflows | Registered PowerShell scripts and attended Power Automate launch | Apple Shortcuts with existing per-space grants | Registered `/bin/sh` scripts |
 | Dictation | Local whisper.cpp and Windows voice typing | Local whisper.cpp and system dictation | Local whisper.cpp and desktop input method, where installed |
 | Background status | Tray, taskbar overlay and notifications | Menu bar, Dock and notifications | Tray and notifications where supported by the desktop |
+| Background relaunch for scheduled tasks | Optional Windows Task Scheduler registration | Schedules while the app runs | Schedules while the app runs |
 
-Dedicated Gmail and IMAP/SMTP sign-in, OS-backed scheduling, Explorer integration, and Windows UI Automation remain open. Existing Phaethon schedules continue to work.
+Dedicated Gmail and IMAP/SMTP sign-in, macOS and Linux scheduled relaunch, Explorer integration, and Windows UI Automation remain open.
 
 ## Connect Microsoft mail
 
@@ -49,6 +50,12 @@ In **Settings → Automations → Registered scripts**, choose a `.ps1` file on 
 For example, a PowerShell script can read input with `[Console]::In.ReadToEnd() | ConvertFrom-Json`. A shell script can consume standard input with a JSON parser it already uses. Phaethon times out after two minutes and offers **Cancel run** while a script is running. Register the file again after editing or moving it. An audit records the script name, time and completion status on this device. It omits input and output. Removing a registration leaves the file intact.
 
 On Windows, **Settings → Automations → Power Automate for desktop** accepts the run URL from a flow’s Properties panel. The URL must contain the environment ID and flow ID. **Open flow** requests an attended run. Power Automate handles sign-in, licensing, input prompts, confirmation, cancellation and completion. Phaethon records when it requested the launch and labels it accordingly. Check the Power Automate console for the result. A real run requires a signed-in, licensed installation and access to the registered flow. [Microsoft desktop flow run URLs](https://learn.microsoft.com/en-us/power-automate/desktop-flows/run-desktop-flows-url-shortcuts).
+
+## Relaunch for scheduled tasks
+
+In the packaged Windows app, enable **Settings → Notifications → Relaunch for scheduled tasks** to register a per-user task for the current Phaethon installation. Windows checks every 15 minutes while that user is signed in. The task starts Phaethon without a window when it was closed. It sends a scheduler check to Phaethon if it was already running. The task does not wake a sleeping computer. Phaethon checks schedules on resume. Use **Turn off** to remove the task or **Repair** if the registration changed. A normal uninstall removes the task and its opt-in marker. [Windows Task Scheduler settings](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings).
+
+Phaethon owns the schedules and job permissions. It runs the latest missed slot within 24 hours, skips nonexistent local times when clocks move forward, and uses the first occurrence of repeated local times. A job interrupted by a process exit is shown as interrupted and is eligible for its next slot. Existing checks for paused automations, model access and unattended operations still apply.
 
 ## Dictate a chat message locally
 

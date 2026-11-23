@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, Notification, protocol, session, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, Notification, powerMonitor, protocol, session, shell } from "electron";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -6,6 +6,8 @@ import { pathToFileURL } from "node:url";
 import { CHANNEL, IDENTITY } from "../shared/channel.ts";
 import { desktopFlowRunUrl } from "../shared/desktop-flow.ts";
 import type { AppNotification, AppTarget, HostOp, TrayState } from "../shared/host.ts";
+import { SCHEDULER_FLAG } from "../shared/os-scheduler.ts";
+import { BackgroundLauncher } from "./background-launcher.ts";
 import { createTray } from "./tray.ts";
 import { desktopStatus, describeStatus, windowsOverlay } from "./windows-status.ts";
 import { startCore, type CoreProcess } from "./core-process.ts";
@@ -48,7 +50,9 @@ if (CHANNEL === "dev") {
 // Headless capture (scripts/capture.mjs) renders offscreen, skips the single-instance lock and uses
 // a throwaway browser profile, so a capture never reads or leaves state in the app's real one.
 if (captureTo) app.setPath("userData", process.env.PHAETHON_CAPTURE_PROFILE || fs.mkdtempSync(path.join(os.tmpdir(), "phaethon-capture-")));
-if (!captureTo && !app.requestSingleInstanceLock()) {
+const scheduledLaunch = process.argv.includes(SCHEDULER_FLAG);
+const launcher = new BackgroundLauncher(() => app.getPath("userData"), app.isPackaged && !captureTo);
+if (!captureTo && !app.requestSingleInstanceLock({ scheduledLaunch })) {
   app.quit();
 }
 
@@ -65,7 +69,7 @@ let trayState: TrayState | undefined;
 const shownNotes = new Set<Notification>();
 /** Started at login: no window until asked for. */
 // macOS says whether it launched the app at login; Windows and Linux pass the flag set below.
-const startHidden = () => process.argv.includes("--hidden") || (process.platform === "darwin" && app.getLoginItemSettings().wasOpenedAtLogin);
+const startHidden = () => scheduledLaunch || process.argv.includes("--hidden") || (process.platform === "darwin" && app.getLoginItemSettings().wasOpenedAtLogin);
 const keepRunning = () => (trayState?.keepRunning ?? true) && !captureTo && !!tray;
 
 function csp(): string {
@@ -286,6 +290,8 @@ function parentWindow(): BrowserWindow | undefined {
 
 async function handle(op: HostOp): Promise<unknown> {
   switch (op.op) {
+    case "backgroundLauncher":
+      return launcher.configure(op.action);
     case "pickFolder": {
       const parent = parentWindow();
       const options = { title: op.title, defaultPath: op.defaultPath, properties: ["openDirectory", "createDirectory"] as Array<"openDirectory" | "createDirectory"> };
@@ -520,7 +526,11 @@ function bringBack(): void {
   mainWindow.focus();
 }
 
-app.on("second-instance", bringBack);
+app.on("second-instance", (_event, _args, _cwd, data) => {
+  if ((data as { scheduledLaunch?: boolean } | null)?.scheduledLaunch === true) {
+    if (launcher.optedIn()) core?.emit({ kind: "schedulerTick" });
+  } else bringBack();
+});
 // macOS: clicking the Dock icon brings the window back.
 app.on("activate", bringBack);
 
@@ -529,6 +539,7 @@ app.on("web-contents-created", (_e, contents) => {
 });
 
 app.whenReady().then(async () => {
+  if (scheduledLaunch && !launcher.optedIn()) { app.quit(); return; }
   if (process.platform === "win32" && app.isPackaged) app.setAppUserModelId(IDENTITY.appIdentifier);
   lockPermissions(session.defaultSession, APP_PERMISSIONS, true);
   core = await startCore({
@@ -544,6 +555,8 @@ app.whenReady().then(async () => {
     },
   });
   serveApp();
+  powerMonitor.on("resume", () => core?.emit({ kind: "schedulerTick" }));
+  if (scheduledLaunch) core.emit({ kind: "schedulerTick" });
   if (!captureTo)
     tray = createTray({
       open: openApp,

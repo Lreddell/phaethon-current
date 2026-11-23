@@ -84,6 +84,7 @@ dmg:
 nsis:
   oneClick: true
   perMachine: false
+  include: build/installer.nsh
 
 linux:
   executableName: phaethon

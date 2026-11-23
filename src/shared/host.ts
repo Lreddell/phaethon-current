@@ -6,6 +6,8 @@
  * travels here and never through the renderer.
  */
 
+import type { SchedulerAction } from "./os-scheduler.ts";
+
 /** main → core, once, before anything else. */
 export type HostHello = { t: "hello"; appVersion: string; platform: string };
 /** core → main, once it accepts connections. */
@@ -36,6 +38,7 @@ export type HostOp =
   | { op: "knownAppIcon"; app: "outlook-win" }
   | { op: "desktopFlowAvailable" }
   | { op: "desktopFlowLaunch"; environmentId: string; workflowId: string; runId: string }
+  | { op: "backgroundLauncher"; action: SchedulerAction }
   /** Opens a sign-in window with its own cookie partition. Resolves with a window id. */
   | { op: "windowOpen"; url: string; title: string; partition: string; width?: number; height?: number }
   /** Cookies the window's session holds for `url`, or every cookie it holds when `url` is left out. */
@@ -126,6 +129,7 @@ export type HostEventBody =
   | { kind: "windowLoadFailed"; window: number; code: string }
   | { kind: "windowClosed"; window: number }
   | { kind: "quitting" }
+  | { kind: "schedulerTick" }
   /** Download progress of `updateDownload`, in bytes (`total` when the server said). */
   | { kind: "updateProgress"; received: number; total: number | null }
   /** A menu-bar item was chosen. */
