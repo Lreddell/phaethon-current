@@ -12,11 +12,11 @@ This keeps Electron and provider-specific SDKs out of the agent tool interface. 
 | --- | --- | --- | --- |
 | Microsoft mailbox | Graph | Graph | Graph |
 | Native mail app | Running classic Outlook profile | Apple Mail and legacy Outlook with Automation permission | — |
-| Workflows | Registered PowerShell scripts | Apple Shortcuts with existing per-space grants | Registered `/bin/sh` scripts |
+| Workflows | Registered PowerShell scripts and attended Power Automate launch | Apple Shortcuts with existing per-space grants | Registered `/bin/sh` scripts |
 | Dictation | Windows voice typing from the focused message box | System dictation | Desktop input method, where installed |
 | Background status | Tray, taskbar overlay and notifications | Menu bar, Dock and notifications | Tray and notifications where supported by the desktop |
 
-The current work covers Microsoft mail and registered local workflows. Dedicated Gmail and IMAP/SMTP sign-in, Power Automate Desktop, local speech recognition, calendar connectors, OS-backed file indexing and scheduling, Explorer integration, and Windows UI Automation remain open. Existing Phaethon schedules and vault search continue to work.
+The current work covers Microsoft mail and registered local workflows. Dedicated Gmail and IMAP/SMTP sign-in, local speech recognition, calendar connectors, OS-backed file indexing and scheduling, Explorer integration, and Windows UI Automation remain open. Existing Phaethon schedules and vault search continue to work.
 
 ## Connect Microsoft mail
 
@@ -34,6 +34,8 @@ In **Settings → Automations → Registered scripts**, choose a `.ps1` file on 
 
 For example, a PowerShell script can read input with `[Console]::In.ReadToEnd() | ConvertFrom-Json`. A shell script can consume standard input with a JSON parser it already uses. Phaethon times out after two minutes and offers **Cancel run** while a script is running. Register the file again after editing or moving it. An audit records the script name, time and completion status on this device. It omits input and output. Removing a registration leaves the file intact.
 
+On Windows, **Settings → Automations → Power Automate for desktop** accepts the run URL from a flow’s Properties panel. The URL must contain the environment ID and flow ID. **Open flow** requests an attended run. Power Automate handles sign-in, licensing, input prompts, confirmation, cancellation and completion. Phaethon records when it requested the launch and labels it accordingly. Check the Power Automate console for the result. A real run requires a signed-in, licensed installation and access to the registered flow. [Microsoft desktop flow run URLs](https://learn.microsoft.com/en-us/power-automate/desktop-flows/run-desktop-flows-url-shortcuts).
+
 ## Permissions and migration
 
 - Graph uses browser-based authorization with PKCE, state validation, and a loopback callback. Tokens stay in the OS credential store. The local metadata file records connection identifiers, display fields and granted scopes. Its namespace is scoped to the vault path and app channel. The Graph API client constrains request destinations and refuses redirects.
@@ -49,4 +51,4 @@ For example, a PowerShell script can read input with `[Console]::In.ReadToEnd() 
 
 Automated coverage includes OAuth callback validation, Graph mailbox request contracts, Outlook adapter account binding, outbox approval and recovery, registered script validation and cancellation, file approval, and course-site redirects. All six mail browser tests passed with a fixture mailbox on Windows. The Windows x64 package built and launched in a disposable profile. It displayed the Graph and Outlook settings and opened the native `.ps1` picker. A separate PowerShell smoke test registered a harmless script, passed JSON through standard input, checked its response, and refused an edited script.
 
-Live Microsoft sign-in and delivery need an Entra registration, a test mailbox, and interactive consent. Classic Outlook mailbox operations need a running classic Outlook profile and a test mailbox. Windows ARM64, macOS and Linux native packaging and smoke tests remain necessary before distributing this work.
+Live Microsoft sign-in and delivery need an Entra registration, a test mailbox, and interactive consent. Classic Outlook mailbox operations need a running classic Outlook profile and a test mailbox. Power Automate flow registration and launch requests have contract tests. A live run needs a licensed flow. Windows ARM64, macOS and Linux native packaging and smoke tests remain necessary before distributing this work.

@@ -18,5 +18,6 @@ import "./memory/life-commands.ts";
 import "./people/commands.ts";
 import "./mail/commands.ts";
 import "./integrations/workflows.ts";
+import "./integrations/desktop-flow.ts";
 import "./jobs/commands.ts";
 import "./background/commands.ts";

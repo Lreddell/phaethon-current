@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { CHANNEL, IDENTITY } from "../shared/channel.ts";
+import { desktopFlowRunUrl } from "../shared/desktop-flow.ts";
 import type { AppNotification, AppTarget, HostOp, TrayState } from "../shared/host.ts";
 import { createTray } from "./tray.ts";
 import { desktopStatus, describeStatus, windowsOverlay } from "./windows-status.ts";
@@ -305,6 +306,12 @@ async function handle(op: HostOp): Promise<unknown> {
       return null;
     case "knownAppIcon":
       return knownAppIcon(op.app);
+    case "desktopFlowAvailable":
+      return process.platform === "win32" && !!app.getApplicationNameForProtocol("ms-powerautomate://");
+    case "desktopFlowLaunch":
+      if (process.platform !== "win32") throw new Error("Power Automate for desktop requires Windows.");
+      await shell.openExternal(desktopFlowRunUrl(op.environmentId, op.workflowId, op.runId));
+      return null;
     case "openExternal":
       if (!isSafeExternal(op.url)) throw new Error("Only web and mail links open outside Phaethon.");
       await shell.openExternal(op.url);
