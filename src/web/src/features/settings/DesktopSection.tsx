@@ -8,6 +8,7 @@ import { formatBytes } from "@/features/chat/lib/attachments";
 import { invoke } from "@/lib/core";
 import { SmallSelect } from "./life/shared";
 import { EmptyRow, Loader, Row, SettingsGroup, useLoad } from "./ui";
+import { WindowAutomation } from "./WindowAutomation";
 
 const linkStatus = () => invoke<ExplorerStatus>("explorer_status");
 const incomingFiles = () => invoke<ExplorerSelection | null>("explorer_pending");
@@ -84,5 +85,6 @@ export function DesktopSection() {
       </Loader>
       {error ? <div className="px-3 py-2"><FieldError>{error}</FieldError></div> : null}
     </SettingsGroup>
+    <WindowAutomation />
   </>;
 }

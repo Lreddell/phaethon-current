@@ -20,6 +20,7 @@ import "./people/commands.ts";
 import "./mail/commands.ts";
 import "./calendar/service.ts";
 import "./files/explorer-import.ts";
+import "./integrations/window-automation.ts";
 import "./integrations/workflows.ts";
 import "./integrations/desktop-flow.ts";
 import "./jobs/commands.ts";

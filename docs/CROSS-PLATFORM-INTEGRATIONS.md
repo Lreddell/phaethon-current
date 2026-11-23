@@ -19,8 +19,9 @@ This keeps Electron and provider-specific SDKs out of the agent tool interface. 
 | Background status | Tray, taskbar overlay and notifications | Menu bar, Dock and notifications | Tray and notifications where supported by the desktop |
 | Background relaunch for scheduled tasks | Optional Windows Task Scheduler registration | Schedules while the app runs | Schedules while the app runs |
 | Shell import | Optional File Explorer Send to shortcut | Desktop file picker and drag-and-drop | Desktop file picker and drag-and-drop |
+| Window accessibility | Attended Windows UI Automation in Settings | — | — |
 
-Dedicated Gmail and IMAP/SMTP sign-in, macOS and Linux scheduled relaunch, and Windows UI Automation remain open.
+Dedicated Gmail and IMAP/SMTP sign-in and macOS and Linux scheduled relaunch remain open.
 
 ## Connect Microsoft mail
 
@@ -63,6 +64,12 @@ Phaethon owns the schedules and job permissions. It runs the latest missed slot 
 In the packaged Windows app, open **Settings → Desktop integrations → Add shortcut**. In File Explorer, select files and choose **Show more options → Send to → Phaethon - Import files**. Phaethon shows the filenames and asks for a destination Space before copying. The request accepts up to 20 regular local files totaling up to 256 MB. Files already in the vault, directories, network paths, and symbolic links are skipped. The original files stay in place. [Windows Send To known folder](https://learn.microsoft.com/windows/win32/shell/knownfolderid) and [Electron shortcut creation](https://www.electronjs.org/docs/latest/api/shell#shellwriteshortcutlinkshortcutpath-operation-options-windows).
 
 Choose **Remove shortcut** to unregister it or **Repair** after moving the app. The shortcut belongs to the current Windows user and is removed by normal uninstall. The Windows package was tested by selecting two fixture files in File Explorer, reviewing them in Phaethon, checking identical copies in a disposable Space, and removing the shortcut.
+
+## Inspect accessible controls on Windows
+
+In **Settings → Desktop integrations → Windows accessibility**, choose **List open windows**, select a window and press **Inspect this window**. You can search its accessible labels and roles. A control can offer **Activate**, **Set text**, or **Scroll** when its Windows UI Automation pattern supports the operation. Every action requires review. **End access** closes inspection, and a grant expires after five minutes. After an action, refresh before choosing another control. [Windows UI Automation control patterns](https://learn.microsoft.com/en-us/dotnet/framework/ui-automation/ui-automation-control-patterns-overview).
+
+Inspection and actions are limited to the selected visible window in the current unlocked session. The helper verifies the window and control again just before applying a change. It skips elevated apps, system sign-in and shell surfaces, and password controls. It reads accessibility labels and never retrieves text input values. Some older apps expose only unclassified panes and have few available controls. The integration is attended and uses no CLI agent tools.
 
 ## Dictate a chat message locally
 
