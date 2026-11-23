@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { LETTER_ORDER, pointsOf } from "@/features/grades/lib/gpa";
+import { platform } from "@/lib/platform";
 import { usePrefs } from "./prefs";
 import { CopyButton, Loader, Row, SettingsGroup, SwitchRow, useLoad } from "./ui";
 
@@ -69,6 +70,11 @@ export function GeneralSection() {
             <Keys keys={s.keys} />
           </div>
         ))}
+        {platform() === "win32" ? (
+          <Row label="Windows voice typing" description="Focus the message box, then start Windows voice typing. Review the text before sending.">
+            <Keys keys={["Win", "H"]} />
+          </Row>
+        ) : null}
       </SettingsGroup>
     </>
   );

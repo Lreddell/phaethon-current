@@ -6,9 +6,11 @@ import { pathToFileURL } from "node:url";
 import { CHANNEL, IDENTITY } from "../shared/channel.ts";
 import type { AppNotification, AppTarget, HostOp, TrayState } from "../shared/host.ts";
 import { createTray } from "./tray.ts";
+import { desktopStatus, describeStatus, windowsOverlay } from "./windows-status.ts";
 import { startCore, type CoreProcess } from "./core-process.ts";
 import { loadSignInPage } from "./sign-in-load.ts";
 import { updateCheck, updateDownload, updateInstall } from "./updater.ts";
+import { knownAppIcon } from "./app-icons.ts";
 import { keepWindowState, loadWindowState } from "./window-state.ts";
 
 /**
@@ -301,6 +303,8 @@ async function handle(op: HostOp): Promise<unknown> {
     case "revealPath":
       shell.showItemInFolder(op.path);
       return null;
+    case "knownAppIcon":
+      return knownAppIcon(op.app);
     case "openExternal":
       if (!isSafeExternal(op.url)) throw new Error("Only web and mail links open outside Phaethon.");
       await shell.openExternal(op.url);
@@ -421,6 +425,10 @@ function applyTrayState(state: TrayState): void {
   const before = trayState;
   trayState = state;
   tray?.update(state);
+  if (process.platform === "win32" && mainWindow) {
+    const description = describeStatus(state);
+    if (!before || describeStatus(before) !== description) mainWindow.setOverlayIcon(windowsOverlay(desktopStatus(state)), description);
+  }
   if (process.env.PHAETHON_TRAY_LOG) console.error(`[tray] state: ${JSON.stringify({ running: state.running, sending: state.sending.length, automations: state.automations.on, recent: state.recent.length, unseen: state.unseen, keepRunning: state.keepRunning })}`);
   // Start at login, in the menu bar only (packaged builds: a dev build would register Electron itself).
   if (app.isPackaged && before?.openAtLogin !== state.openAtLogin) app.setLoginItemSettings({ openAtLogin: state.openAtLogin, args: ["--hidden"] });
@@ -452,6 +460,11 @@ function openApp(target?: AppTarget): void {
  * written is hidden until the reply ends, so the reply isn't cut off.
  */
 function watchMainWindow(window: BrowserWindow): void {
+  if (process.platform === "win32") {
+    window.on("show", () => {
+      if (trayState) window.setOverlayIcon(windowsOverlay(desktopStatus(trayState)), describeStatus(trayState));
+    });
+  }
   window.on("close", (event) => {
     if (quitting || !keepRunning()) return;
     if ((trayState?.running ?? 0) > 0) {
@@ -491,6 +504,7 @@ app.on("web-contents-created", (_e, contents) => {
 });
 
 app.whenReady().then(async () => {
+  if (process.platform === "win32" && app.isPackaged) app.setAppUserModelId(IDENTITY.appIdentifier);
   lockPermissions(session.defaultSession, APP_PERMISSIONS);
   core = await startCore({
     entry: path.join(distDir, "server", "main.mjs"),

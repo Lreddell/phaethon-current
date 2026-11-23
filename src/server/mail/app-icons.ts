@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { host } from "../host.ts";
 
 /**
  * The real icons of the apps Phaethon connects to (Mail, Outlook, Shortcuts),
@@ -38,6 +39,9 @@ async function iconFile(app: string): Promise<string | null> {
 }
 
 async function render(app: string): Promise<string | null> {
+  if (app === "outlook-win" && process.platform === "win32" && host().available) {
+    return host().call<string | null>({ op: "knownAppIcon", app }).catch(() => null);
+  }
   if (process.platform !== "darwin") return null;
   const icns = await iconFile(app);
   if (!icns) return null;
@@ -55,7 +59,7 @@ async function render(app: string): Promise<string | null> {
 
 /** A data URL of the app's own icon, or null when it isn't installed or can't be read. */
 export function appIcon(app: string): Promise<string | null> {
-  if (!APPS[app]) return Promise.resolve(null);
+  if (app !== "outlook-win" && !Object.hasOwn(APPS, app)) return Promise.resolve(null);
   let p = cache.get(app);
   if (!p) {
     p = render(app);

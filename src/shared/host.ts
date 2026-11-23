@@ -33,6 +33,7 @@ export type HostOp =
   | { op: "openPath"; path: string }
   | { op: "revealPath"; path: string }
   | { op: "openExternal"; url: string }
+  | { op: "knownAppIcon"; app: "outlook-win" }
   /** Opens a sign-in window with its own cookie partition. Resolves with a window id. */
   | { op: "windowOpen"; url: string; title: string; partition: string; width?: number; height?: number }
   /** Cookies the window's session holds for `url`, or every cookie it holds when `url` is left out. */
