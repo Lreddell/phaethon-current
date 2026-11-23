@@ -39,6 +39,14 @@ describe("file catalog", () => {
     expect(catalogItem(settings, path.join(link, "resume-private.txt"), "spotlight")).toBeUndefined();
   });
 
+  it("normalizes the granted root while skipping links inside it", async () => {
+    const alias = path.join(fs.realpathSync(env.home), "space-alias");
+    fs.symlinkSync(root, alias, process.platform === "win32" ? "junction" : "dir");
+    await expect(searchFileCatalog(() => [{ ...settings, dir: alias }], "résumé")).resolves.toMatchObject({
+      items: [{ path: "shared/notes/Résumé.txt" }],
+    });
+  });
+
   it("keeps Windows Search input bounded and escapes the local scope", () => {
     expect(windowsSearchQuery("C:\\Users\\O'Brien\\space", "Week 2")).toContain("SCOPE='file:C:/Users/O''Brien/space' AND System.FileName LIKE '%Week 2%'");
     expect(windowsSearchQuery("C:\\folder", "Week's plan_%?")).toBeUndefined();

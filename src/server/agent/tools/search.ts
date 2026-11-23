@@ -216,13 +216,20 @@ function walk(root: Root, budget: Budget, visit: (abs: string, rel: string) => v
 
 export function walkFileNames(roots: Root[], visit: (root: Root, file: string, relative: string) => boolean): boolean {
   const budget = new Budget();
-  for (const root of roots) {
+  for (const root of canonicalRoots(roots)) {
     if (budget.stopped) break;
     walk(root, budget, (file, relative) => {
       if (Date.now() - budget.started > SEARCH_TIMEOUT_MS || !visit(root, file, relative)) budget.stopped = true;
     }, Infinity);
   }
   return budget.stopped || budget.notes.size > 0;
+}
+
+function canonicalRoots(roots: Root[]): Root[] {
+  return roots.flatMap((root) => {
+    try { return [{ ...root, dir: realpath(root.dir) }]; }
+    catch { return []; }
+  });
 }
 
 function scanFile(root: Root, abs: string, rel: string, q: Query, budget: Budget, hits: Hit[]): void {
@@ -260,7 +267,8 @@ function scanFile(root: Root, abs: string, rel: string, q: Query, budget: Budget
   budget.files++;
   let buf: Buffer;
   try {
-    const fd = fs.openSync(real, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+    const noFollow = process.platform === "win32" ? 0 : (fs.constants.O_NOFOLLOW ?? 0);
+    const fd = fs.openSync(real, fs.constants.O_RDONLY | noFollow);
     try {
       const want = Math.min(MAX_SEARCH_FILE + 1, remaining + 1, size);
       buf = Buffer.alloc(want);
@@ -289,7 +297,7 @@ export function search(roots: Root[], rawQuery: string): string {
   const q = parseQuery(rawQuery);
   const budget = new Budget();
   const hits: Hit[] = [];
-  for (const root of roots) {
+  for (const root of canonicalRoots(roots)) {
     if (budget.stopped) break;
     walk(root, budget, (abs, rel) => scanFile(root, abs, rel, q, budget, hits));
   }
