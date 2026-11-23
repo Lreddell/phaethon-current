@@ -23,16 +23,53 @@ type Cached = SiteIcon & { at: number };
 
 export type Fetch = (url: URL, init: RequestInit) => Promise<Response>;
 
+async function readIcon(response: Response): Promise<Buffer | null> {
+  const reader = response.body?.getReader();
+  if (!reader) return null;
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return length ? Buffer.concat(chunks, length) : null;
+      length += value.length;
+      if (length > MAX_BYTES) return null;
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+}
+
+async function fetchIconAt(at: URL, fetchImpl: Fetch): Promise<Response | null> {
+  const origin = at.origin;
+  const signal = AbortSignal.timeout(TIMEOUT_MS);
+  for (let hop = 0; hop < 4; hop++) {
+    const response = await fetchImpl(at, { redirect: "manual", signal, headers: { "user-agent": userAgent(), accept: "image/*" } });
+    if (response.ok) return response;
+    await response.body?.cancel().catch(() => {});
+    const loc = response.headers.get("location");
+    if (response.status < 300 || response.status > 399 || !loc) return null;
+    const next = new URL(loc, at);
+    if (next.origin !== origin || next.username || next.password) return null;
+    at = next;
+  }
+  return null;
+}
+
 /** The first icon the origin serves as an image of a sane size, as a data URL; null when it has none. */
 export async function fetchSiteIcon(origin: URL, fetchImpl: Fetch = (u, i) => fetch(u, i)): Promise<string | null> {
   for (const p of PATHS) {
     try {
-      const res = await fetchImpl(new URL(p, origin), { redirect: "follow", signal: AbortSignal.timeout(TIMEOUT_MS), headers: { "user-agent": userAgent(), accept: "image/*" } });
-      if (!res.ok) continue;
+      const res = await fetchIconAt(new URL(p, origin), fetchImpl);
+      if (!res) continue;
       const type = (res.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
-      if (!type.startsWith("image/")) continue;
-      const bytes = Buffer.from(await res.arrayBuffer());
-      if (!bytes.length || bytes.length > MAX_BYTES) continue;
+      if (!type.startsWith("image/")) {
+        await res.body?.cancel().catch(() => {});
+        continue;
+      }
+      const bytes = await readIcon(res);
+      if (!bytes) continue;
       return `data:${type};base64,${bytes.toString("base64")}`;
     } catch {
       // Not there, too slow, or refused: try the next name.
