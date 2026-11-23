@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Refusal } from "../../rpc/registry.ts";
 import { cleanRel, resolveIn, resolveInOther } from "../../core/resolve.ts";
-import { isWithin, realpath, writeFileAtomic } from "../../core/fsx.ts";
+import { fileStamp, isWithin, realpath, writeFileAtomic } from "../../core/fsx.ts";
 import { spaceDir } from "../../core/vault.ts";
 import type { Block } from "../../core/thread.ts";
 import { covers, grantsFor } from "../../grants/grants.ts";
@@ -320,7 +320,7 @@ export type WritePlan = { real: string; rel: string; action: "create" | "replace
 function writeFingerprint(stat: fs.BigIntStats | undefined): string | null {
   if (!stat) return null;
   if (!stat.isFile()) throw new Refusal("Only regular files can be changed with this tool.");
-  return [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join("/");
+  return fileStamp(stat);
 }
 
 function cut(text: string, cap: number): { text: string; cut: boolean } {

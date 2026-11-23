@@ -50,6 +50,11 @@ export function statOrNull(p: string): fs.Stats | null {
   }
 }
 
+/** Identity and change stamp for a file when size and millisecond time alone can collide. */
+export function fileStamp(stat: fs.BigIntStats): string {
+  return [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join("/");
+}
+
 export function isNotFound(e: unknown): boolean {
   const code = (e as NodeJS.ErrnoException | undefined)?.code;
   return code === "ENOENT" || code === "ENOTDIR";

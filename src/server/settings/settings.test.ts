@@ -4,6 +4,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { call, tempHome } from "../../../tests/harness.ts";
 import { OLD_APP_IDENTIFIER } from "../env.ts";
 import { vaultRoot } from "../core/vault.ts";
+import { writeFileAtomic } from "../core/fsx.ts";
 import { migrate, migrateLegacyRoot, moves } from "../identity/identity.ts";
 import { readSettings, setSetting, settingsFile, updateSettings, validateAppearance } from "./settings.ts";
 import "./commands.ts";
@@ -28,6 +29,16 @@ describe("vault settings", () => {
     expect(s.isolateClaudeConfig).toBe(true);
     expect(fs.readFileSync(settingsFile(), "utf8")).toContain("future");
     expect(fs.existsSync(`${settingsFile()}.tmp`)).toBe(false);
+  });
+
+  it("notices an external replacement with the same size and modification time", () => {
+    const time = new Date("2026-01-01T00:00:00Z");
+    writeSettings('{"backend":"claude-cli"}');
+    fs.utimesSync(settingsFile(), time, time);
+    expect(readSettings().backend).toBe("claude-cli");
+    writeFileAtomic(settingsFile(), '{"backend":"gemini-cli"}');
+    fs.utimesSync(settingsFile(), time, time);
+    expect(readSettings().backend).toBe("gemini-cli");
   });
 
   it("keeps the other settings when one field has the wrong type (fixed Rust bug)", () => {

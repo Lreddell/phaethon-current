@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { isNotFound, writeJsonAtomic } from "../core/fsx.ts";
+import { fileStamp, isNotFound, writeJsonAtomic } from "../core/fsx.ts";
 import { vaultStateDir } from "../core/vault.ts";
 
 /**
@@ -75,20 +75,21 @@ function optString(value: unknown): string | null | undefined {
 
 const RAW_KEYS = ["agentInstances", "activeAgentInstances", "providerModels", "providerUrls", "appearance", "lastModel", "allowWrites", "memory", "digest", "notifications", "background"] as const;
 
-let settingsCache: { file: string; mtimeMs: number; size: number; value: VaultSettings } | undefined;
+let settingsCache: { file: string; stamp: string; value: VaultSettings } | undefined;
 
 /** Every setting, with defaults for missing or wrongly typed fields. Never throws. */
 export function readSettings(): VaultSettings {
   const out: VaultSettings = { ...DEFAULT_SETTINGS };
   const file = settingsFile();
-  let st: fs.Stats;
+  let st: fs.BigIntStats;
   try {
-    st = fs.statSync(file);
+    st = fs.statSync(file, { bigint: true });
   } catch {
     if (settingsCache?.file === file) settingsCache = undefined;
     return out;
   }
-  if (settingsCache && settingsCache.file === file && settingsCache.mtimeMs === st.mtimeMs && settingsCache.size === st.size) {
+  const stamp = fileStamp(st);
+  if (settingsCache && settingsCache.file === file && settingsCache.stamp === stamp) {
     return { ...settingsCache.value };
   }
   let text: string;
@@ -113,7 +114,7 @@ export function readSettings(): VaultSettings {
   for (const key of ["model", "effort", "provider"] as const) out[key] = optString(o[key]) ?? null;
   // serde's Option<Value> reads JSON null as absent.
   for (const key of RAW_KEYS) if (o[key] !== undefined && o[key] !== null) out[key] = o[key];
-  settingsCache = { file, mtimeMs: st.mtimeMs, size: st.size, value: out };
+  settingsCache = { file, stamp, value: out };
   return { ...out };
 }
 
