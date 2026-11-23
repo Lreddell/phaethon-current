@@ -315,7 +315,13 @@ function skipper(ex: Exclusions, base: string[], baseReal: string): ((rel: strin
   return (rel) => !!excludedFolder(ex, [...base, ...rel.split("/")], path.join(baseReal, ...rel.split("/")));
 }
 
-export type WritePlan = { real: string; rel: string; action: "create" | "replace"; before: string | null; summary: string; detail: string; truncated: boolean };
+export type WritePlan = { real: string; rel: string; action: "create" | "replace"; fingerprint: string | null; before: string | null; summary: string; detail: string; truncated: boolean };
+
+function writeFingerprint(stat: fs.BigIntStats | undefined): string | null {
+  if (!stat) return null;
+  if (!stat.isFile()) throw new Refusal("Only regular files can be changed with this tool.");
+  return [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join("/");
+}
 
 function cut(text: string, cap: number): { text: string; cut: boolean } {
   const buf = Buffer.from(text, "utf8");
@@ -348,14 +354,15 @@ export function describeWrite(ctx: ToolCtx, p: string, contents: string): WriteP
   let action: "create" | "replace" = "create";
   let before: string | null = null;
   let beforeCut = false;
-  const st = fs.lstatSync(real, { throwIfNoEntry: false });
+  const st = fs.lstatSync(real, { bigint: true, throwIfNoEntry: false });
   if (st?.isDirectory()) throw new Refusal(`"${p}" is a folder`);
+  const fingerprint = writeFingerprint(st);
   if (st?.isFile()) {
     action = "replace";
     try {
       const fd = fs.openSync(real, "r");
       try {
-        const buf = Buffer.alloc(Math.min(st.size, PREVIEW_CAP + 1));
+        const buf = Buffer.alloc(Math.min(Number(st.size), PREVIEW_CAP + 1));
         const n = fs.readSync(fd, buf, 0, buf.length, 0);
         const c = cut(buf.subarray(0, n).toString("utf8"), PREVIEW_CAP);
         before = c.text;
@@ -374,6 +381,7 @@ export function describeWrite(ctx: ToolCtx, p: string, contents: string): WriteP
     real,
     rel,
     action,
+    fingerprint,
     before,
     summary: action === "replace" ? `Replace the file ${rel} with new contents (${lines}).` : `Create a new file ${rel} (${lines}).`,
     detail: detail.text,
@@ -385,14 +393,22 @@ export function describeWrite(ctx: ToolCtx, p: string, contents: string): WriteP
 export function runWrite(ctx: ToolCtx, plan: WritePlan, contents: string): string {
   const real = resolveIn(ctx.root, plan.rel, false);
   guard(exclusionsFor(ctx.space, ctx.root), plan.rel, cleanRel(plan.rel), real);
+  const checkTarget = () => {
+    const current = resolveIn(ctx.root, plan.rel, false);
+    guard(exclusionsFor(ctx.space, ctx.root), plan.rel, cleanRel(plan.rel), current);
+    const fingerprint = writeFingerprint(fs.lstatSync(current, { bigint: true, throwIfNoEntry: false }));
+    if (current !== plan.real || fingerprint !== plan.fingerprint) throw new Refusal(`"${plan.rel}" changed after review. Ask for a new approval.`);
+  };
+  checkTarget();
   try {
     fs.mkdirSync(path.dirname(real), { recursive: true });
   } catch (e) {
     throw new Refusal(`cannot create the folder for "${plan.rel}": ${(e as Error).message}`);
   }
   try {
-    writeFileAtomic(real, contents, { tmp: path.join(path.dirname(real), `.${path.basename(real)}.phaethon-tmp`) });
+    writeFileAtomic(real, contents, { tmp: path.join(path.dirname(real), `.${path.basename(real)}.phaethon-tmp`), beforeCommit: checkTarget });
   } catch (e) {
+    if (e instanceof Refusal) throw e;
     throw new Refusal(`cannot write "${plan.rel}": ${(e as Error).message}`);
   }
   return `Wrote ${Buffer.byteLength(contents, "utf8")} bytes to ${plan.rel}.`;

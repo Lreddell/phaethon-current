@@ -35,6 +35,19 @@ beforeEach(() => {
   updateFilesSettings("school", { excluded: ["private"] });
 });
 
+describe("approved file writes", () => {
+  it("does not replace a destination created or changed since the approval was shown", () => {
+    const create = describeWrite(ctx(), "notes/new.md", "agent draft");
+    const replace = describeWrite(ctx(), "notes/week1.md", "agent update");
+    fs.writeFileSync(path.join(school, "notes/new.md"), "user draft");
+    fs.writeFileSync(path.join(school, "notes/week1.md"), "user updated this note");
+    expect(() => runWrite(ctx(), create, "agent draft")).toThrow("changed after review");
+    expect(() => runWrite(ctx(), replace, "agent update")).toThrow("changed after review");
+    expect(fs.readFileSync(path.join(school, "notes/new.md"), "utf8")).toBe("user draft");
+    expect(fs.readFileSync(path.join(school, "notes/week1.md"), "utf8")).toBe("user updated this note");
+  });
+});
+
 describe("excluded folders", () => {
   it("are refused by read_file, read_page and list_files, by name in any case", async () => {
     expect(() => readFile(ctx(), "private/diary.md")).toThrow(REFUSED);
