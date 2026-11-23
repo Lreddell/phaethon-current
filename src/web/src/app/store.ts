@@ -13,7 +13,7 @@ import { mergeRefresh } from "./sidebar/paging";
  */
 
 export type View = "chat" | "files" | "study" | "grades" | "plan" | "courses";
-export type SettingsSection = "general" | "notifications" | "models" | "providers" | "agents" | "spaces" | "courses" | "memory" | "people" | "mail" | "automations" | "appearance" | "about";
+export type SettingsSection = "privacy" | "general" | "notifications" | "models" | "providers" | "agents" | "spaces" | "courses" | "memory" | "people" | "mail" | "automations" | "appearance" | "about";
 export type SettingsTarget = { brand?: string; mode?: "subscription" | "api" };
 
 /**
@@ -406,8 +406,12 @@ export const useNav = create<Nav>((set, get) => {
       const tabs = current.tabs.filter((tab) => tab.space !== id);
       const files = current.files.filter((file) => file.space !== id);
       generation[id] = (generation[id] ?? 0) + 1;
+      const { [id]: _t, ...threads } = current.threads;
+      const { [id]: _o, ...open } = current.open;
       set({
         spaces: { data: spaces, loading: false },
+        threads,
+        open,
         tabs,
         closedTabs: current.closedTabs.filter((tab) => tab.space !== id),
         files,

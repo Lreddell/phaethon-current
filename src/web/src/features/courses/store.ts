@@ -40,10 +40,15 @@ async function importSites(sites: ImportSite[], run: Run, get: () => Courses, se
   let notes: string[] = [];
   let error: string | undefined;
   let signInConnection: string | undefined;
+  const mine = () => {
+    const current = get().run;
+    return current && current.key === run.key ? current : null;
+  };
   for (const { connection, courses } of sites) {
     let site: Run = { ...newRun(run.key, run.space, run.spaces, connection.id, connectionName(connection), courses), update: run.update };
     const publish = () => {
-      const current = get().run!;
+      const current = mine();
+      if (!current) return;
       const rows = current.courses.slice();
       rows.splice(offset, courses.length, ...site.courses.map((c) => ({ ...c, id: run.update ? `${connection.id}/${c.id}` : c.id })));
       set({ run: { ...current, connection: connection.id, courses: rows, notes: [...notes, ...(site.notes ?? [])] } });
@@ -63,16 +68,18 @@ async function importSites(sites: ImportSite[], run: Run, get: () => Courses, se
     if (end.kind === "timedOut") site = finishRun(site, "failed", "The course site didn’t finish responding.");
     publish();
     offset += courses.length;
-    notes = get().run?.notes ?? [];
+    const current = mine();
+    if (!current) return;
+    notes = current.notes ?? [];
     error ??= site.error;
     signInConnection ??= site.signInConnection;
-    const current = get().run!;
     if (site.status === "cancelled" || current.cancelling) {
       set({ run: finishRun(current, "cancelled", undefined, "Stopped") });
       return;
     }
   }
-  const current = get().run!;
+  const current = mine();
+  if (!current) return;
   const incomplete = run.update && current.courses.some((c) => !c.result);
   set({ run: finishRun({ ...current, signInConnection }, error || incomplete ? "failed" : "done", error) });
 }

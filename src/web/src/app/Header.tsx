@@ -3,15 +3,16 @@ import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { toast } from "@/components/toast";
 import { errorText } from "@/lib/core";
-import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Truncate } from "@/components/truncate";
+import { Badge } from "@/components/ui/badge";
 import { ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { MenuShortcut } from "@/components/ui/menu";
 import { PageTab, PageTabList, PageTabNew, pageTabStripClassName } from "@/components/ui/page-tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
-import { isMac } from "@/lib/platform";
+import { isDevChannel, isMac } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { chordText, keysFor } from "./shortcuts";
 import { canCloseTab, DRAFT, type OpenTab, useActiveSpace, useNav } from "./store";
@@ -39,8 +40,8 @@ import { VIEWS } from "./views";
  * page's title. It is the window's drag region on macOS.
  */
 
-type Slots = { title: HTMLElement | null; actions: HTMLElement | null };
-const SlotContext = createContext<Slots>({ title: null, actions: null });
+type Slots = { title: HTMLElement | null; subTitle: HTMLElement | null; actions: HTMLElement | null };
+const SlotContext = createContext<Slots>({ title: null, subTitle: null, actions: null });
 const ActiveContext = createContext(true);
 
 /** Marks a subtree as the visible page (or a hidden, kept-alive one). */
@@ -53,12 +54,17 @@ export function useViewActive(): boolean {
   return useContext(ActiveContext);
 }
 
-/** A page's actions, shown at the right of the title bar while the page is visible. (Its tab is its title.) */
-export function Header({ actions }: { title?: ReactNode; actions?: ReactNode }) {
+/** A page's optional sub-view breadcrumb/title and right-hand actions, shown in the title bar while visible. */
+export function Header({ title, actions }: { title?: ReactNode; actions?: ReactNode }) {
   const slots = useContext(SlotContext);
   const active = useContext(ActiveContext);
   if (!active) return null;
-  return actions && slots.actions ? createPortal(actions, slots.actions) : null;
+  return (
+    <>
+      {title && slots.subTitle ? createPortal(title, slots.subTitle) : null}
+      {actions && slots.actions ? createPortal(actions, slots.actions) : null}
+    </>
+  );
 }
 
 /**
@@ -76,10 +82,17 @@ export function HeaderTitle({ children }: { children: ReactNode }) {
 }
 
 /** Provides the slots the title bar's `Header` portals into. */
-export function HeaderSlots({ children }: { children: (bind: { title: (el: HTMLElement | null) => void; actions: (el: HTMLElement | null) => void }) => ReactNode }) {
+export function HeaderSlots({
+  children,
+}: {
+  children: (bind: { title: (el: HTMLElement | null) => void; subTitle: (el: HTMLElement | null) => void; actions: (el: HTMLElement | null) => void }) => ReactNode;
+}) {
   const [title, setTitle] = useState<HTMLElement | null>(null);
+  const [subTitle, setSubTitle] = useState<HTMLElement | null>(null);
   const [actions, setActions] = useState<HTMLElement | null>(null);
-  return <SlotContext value={{ title, actions }}>{children({ title: setTitle, actions: setActions })}</SlotContext>;
+  const slots = useMemo(() => ({ title, subTitle, actions }), [title, subTitle, actions]);
+  const bind = useMemo(() => ({ title: setTitle, subTitle: setSubTitle, actions: setActions }), []);
+  return <SlotContext value={slots}>{children(bind)}</SlotContext>;
 }
 
 export function HeaderIconButton({ label, keys, onClick, children }: { label: string; keys?: string[]; onClick: () => void; children: ReactNode }) {
@@ -179,7 +192,10 @@ function TabButton({ tab, active, last, only, closable }: { tab: OpenTab; active
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           activate(tab.id);
-        } else if (e.key === "Delete" || e.key === "Backspace") close(tab.id);
+        } else if (e.key === "Delete" || e.key === "Backspace") {
+          e.preventDefault();
+          close(tab.id);
+        }
       }}
       icon={<Icon icon={icon} />}
       label={
@@ -223,7 +239,11 @@ function TabStrip() {
  * and the page's actions. On macOS the traffic lights sit in its left
  * end.
  */
-export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) => void; actions: (el: HTMLElement | null) => void } }) {
+export function AppHeader({
+  bind,
+}: {
+  bind: { title: (el: HTMLElement | null) => void; subTitle: (el: HTMLElement | null) => void; actions: (el: HTMLElement | null) => void };
+}) {
   const space = useActiveSpace();
   // The column is the docked sidebar's; a compact window's floating sidebar leaves the bar as it is when hidden.
   const sidebarOpen = useNav((s) => s.sidebarOpen && !s.compact);
@@ -260,6 +280,11 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
         )}
       >
         <BrandWordmark showName={sidebarOpen} nameClassName="hidden @titlebar-brand/lead:inline" markClassName="@titlebar-brand/lead:relative @titlebar-brand/lead:top-px" />
+        {sidebarOpen && isDevChannel() ? (
+          <Badge variant="warning" size="sm" className="ml-1.5 hidden @titlebar-brand/lead:inline-flex">
+            Dev
+          </Badge>
+        ) : null}
         {sidebarOpen ? <span className="flex-1" /> : null}
         <HeaderIconButton label={sidebarOpen || peek ? "Hide sidebar" : "Show sidebar"} keys={keysFor("sidebar").keys} onClick={toggle}>
           <Icon icon={icons.sidebar} />
@@ -293,6 +318,12 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
             </Tooltip>
           </div>
         ) : null}
+        <div
+          ref={bind.subTitle}
+          hidden={settingsOpen}
+          data-slot="header-subtitle"
+          className="app-no-drag ml-2 flex h-full min-w-0 items-center gap-1.5 pt-(--titlebar-skew) text-sm empty:hidden"
+        />
         <div className="h-full min-w-4 flex-1" />
         {/*
           A fixed share of the bar for the page's actions, so pages with more or fewer of them never resize the tabs.

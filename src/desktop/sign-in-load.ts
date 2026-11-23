@@ -30,6 +30,7 @@ async function attempt(contents: WebContents, url: string): Promise<string | nul
     const load = contents.loadURL(url).then(() => null, (error: unknown) => {
       // Electron's error message can contain the full SSO URL. Use only its code.
       const code = (error as { code?: unknown })?.code;
+      if (code === "ERR_ABORTED") return null;
       return typeof code === "string" && /^ERR_[A-Z0-9_]+$/.test(code) ? code : "ERR_FAILED";
     });
     return await Promise.race([committed, load, timeout]);

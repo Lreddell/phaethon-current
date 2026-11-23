@@ -166,13 +166,20 @@ function courseFrom(v: unknown, concluded: boolean, now: number): Course | null 
   // takes precedence; otherwise use the US academic calendar as a picker hint.
   const bounded = start !== null && end !== null && end - start <= 366 * 86400;
   const localTerm = guessed ?? (start !== null ? termAt(new Date(start * 1000)) : undefined);
-  const current = !concluded && asString(field(v, "workflow_state")) !== "completed" && !ended && !notStarted && (bounded || localTerm === termAt(today));
+  const current = !concluded && asString(field(v, "workflow_state")) !== "completed" && !ended && !notStarted && (bounded || (localTerm !== undefined && isCurrentTerm(localTerm, today)));
   return { id, name, code, term: termName ?? guessed ?? null, current };
 }
 
 function termAt(date: Date): string {
   const month = date.getMonth(); // January–May, June–July, August–December.
   return `${month < 5 ? "Spring" : month < 7 ? "Summer" : "Fall"} ${date.getFullYear()}`;
+}
+
+function isCurrentTerm(term: string, today: Date): boolean {
+  if (term === termAt(today)) return true;
+  // Quarter-system Winter terms run Jan–Mar (and Winter intersession may start in Dec).
+  const month = today.getMonth();
+  return month < 3 && term === `Winter ${today.getFullYear()}`;
 }
 
 const SEASONS: Record<string, string> = {

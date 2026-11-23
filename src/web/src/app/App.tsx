@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { IconProvider } from "@/components/icon";
 import { ToastProvider } from "@/components/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { connectCore } from "@/lib/core";
@@ -9,6 +8,7 @@ import { useNav } from "./store";
 import { useApplyTheme, useTheme } from "./theme";
 import { Onboarding } from "@/features/onboarding/Onboarding";
 import { UpdateDialogs } from "@/features/updates/UpdateDialogs";
+import { TelemetryGate } from "@/features/telemetry/Privacy";
 
 const ONBOARDED = "phaethon.onboarded";
 
@@ -33,29 +33,27 @@ export function App() {
   }, [loadSpaces, hydrate]);
 
   return (
-    <IconProvider>
-      <TooltipProvider delay={400}>
-        <ToastProvider>
-          {setup ? (
-            <Onboarding
-              onDone={() => {
-                try {
-                  localStorage.setItem(ONBOARDED, "1");
-                } catch {
-                  // ignore
-                }
-                setSetup(false);
-                void loadSpaces();
-              }}
-            />
-          ) : (
-            <>
-              <Shell />
-              <UpdateDialogs />
-            </>
-          )}
-        </ToastProvider>
-      </TooltipProvider>
-    </IconProvider>
+    <TooltipProvider delay={400}>
+      <ToastProvider>
+        {setup ? (
+          <Onboarding
+            onDone={() => {
+              try {
+                localStorage.setItem(ONBOARDED, "1");
+              } catch {
+                // ignore
+              }
+              setSetup(false);
+              void loadSpaces();
+            }}
+          />
+        ) : (
+          <TelemetryGate>
+            <Shell />
+            <UpdateDialogs />
+          </TelemetryGate>
+        )}
+      </ToastProvider>
+    </TooltipProvider>
   );
 }

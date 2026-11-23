@@ -24,7 +24,14 @@ export function DeleteCourseDialog({ course, onClose }: { course: CourseInfo; on
   const label = canTrash === undefined ? "Delete course" : canTrash ? "Move to Trash" : "Delete for good";
 
   useEffect(() => {
-    void lmsCourseCanTrash().then(setCanTrash, (e) => setError(cleanMessage(e)));
+    let live = true;
+    void lmsCourseCanTrash().then(
+      (ok) => live && setCanTrash(ok),
+      (e) => live && setError(cleanMessage(e)),
+    );
+    return () => {
+      live = false;
+    };
   }, []);
 
   async function remove() {

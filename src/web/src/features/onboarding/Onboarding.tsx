@@ -24,7 +24,9 @@ import { type Backend, checkApiKey, getSettings, type ProviderId, type ProviderI
 import { canSaveUnchecked, checkAndSave, isSaved, type KeyOutcome, outcomeText } from "@/features/settings/providers/logic";
 import { useDelayed } from "@/hooks/use-delayed";
 import { cn } from "@/lib/utils";
+import { OnboardingPrivacy } from "@/features/telemetry/Privacy";
 import { StepPreview } from "./Preview";
+import { isDevChannel } from "@/lib/platform";
 
 /**
  * Progress through first-run setup, kept so a reload or a stray Esc loses
@@ -42,7 +44,7 @@ export type Draft = {
 };
 const DRAFT = "phaethon.onboarding";
 const START: Draft = { step: 0, method: null, provider: "anthropic", name: "", edu: true, answer: null, spaces: [] };
-const LAST = 3;
+const LAST = 4;
 
 function readDraft(): Draft {
   try {
@@ -54,7 +56,7 @@ function readDraft(): Draft {
 }
 
 /** Each step's art (docs/UI-REBUILD.md › Art: onboarding cycles sky → dawn → meadow). */
-const PALETTES: ArtPalette[] = ["sky", "dawn", "meadow", "sky"];
+const PALETTES: ArtPalette[] = ["sky", "dawn", "meadow", "dawn", "sky"];
 
 /** First run: what Phaethon is, how it answers, and a first space. */
 export function Onboarding({ onDone }: { onDone: () => void }) {
@@ -90,7 +92,9 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
   }, []);
 
   const reduce = useReducedMotion();
-  const step = Math.min(draft.step, LAST);
+  // Phaethon Dev has no telemetry collector, so it has no privacy choices to ask for.
+  const skipPrivacy = isDevChannel();
+  const step = Math.min(skipPrivacy && draft.step === 3 ? 4 : draft.step, LAST);
   return (
     <main className="@container/onboarding relative flex h-full bg-background">
       <div aria-hidden className="app-drag absolute inset-x-0 top-0 h-(--titlebar-height)" />
@@ -100,7 +104,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
         </div>
         <div className="page-scroll min-h-0 flex-1">
           <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-start px-6 pt-(--onboarding-top) pb-16">
-            <Dots step={step} />
+            <Dots index={skipPrivacy && step === 4 ? 3 : step} count={skipPrivacy ? LAST : LAST + 1} />
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={step}
@@ -111,8 +115,9 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
               >
                 {step === 0 ? <Welcome onNext={() => patch({ step: 1 })} /> : null}
                 {step === 1 ? <Answers draft={draft} patch={patch} onBack={() => patch({ step: 0 })} onNext={() => patch({ step: 2 })} /> : null}
-                {step === 2 ? <FirstSpace draft={draft} patch={patch} onBack={() => patch({ step: 1 })} onDone={(spaces) => patch({ step: 3, spaces })} /> : null}
-                {step === 3 ? <AllSet draft={draft} onBack={() => patch({ step: 2 })} onDone={finish} /> : null}
+                {step === 2 ? <FirstSpace draft={draft} patch={patch} onBack={() => patch({ step: 1 })} onDone={(spaces) => patch({ step: skipPrivacy ? 4 : 3, spaces })} /> : null}
+                {step === 3 ? <Privacy onBack={() => patch({ step: 2 })} onNext={() => patch({ step: 4 })} /> : null}
+                {step === 4 ? <AllSet draft={draft} onBack={() => patch({ step: skipPrivacy ? 2 : 3 })} onDone={finish} /> : null}
               </motion.div>
             </AnimatePresence>
           </div>
@@ -133,15 +138,15 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
   );
 }
 
-function Dots({ step }: { step: number }) {
+function Dots({ index, count }: { index: number; count: number }) {
   return (
-    <div className="mb-8 flex items-center gap-1.5" role="img" aria-label={`Step ${step + 1} of ${LAST + 1}`}>
-      {Array.from({ length: LAST + 1 }, (_, i) => (
+    <div className="mb-8 flex items-center gap-1.5" role="img" aria-label={`Step ${index + 1} of ${count}`}>
+      {Array.from({ length: count }, (_, i) => (
         <motion.span
           key={i}
           layout
           transition={{ type: "spring", stiffness: 480, damping: 38 }}
-          className={cn("h-1.5 rounded-full", i === step ? "w-6 bg-primary" : i < step ? "w-1.5 bg-primary/40" : "w-1.5 bg-input")}
+          className={cn("h-1.5 rounded-full", i === index ? "w-6 bg-primary" : i < index ? "w-1.5 bg-primary/40" : "w-1.5 bg-input")}
         />
       ))}
     </div>
@@ -632,6 +637,26 @@ function FirstSpace({ draft, patch, onBack, onDone }: { draft: Draft; patch: (p:
 // ---- Done ----
 
 /** "You're all set" (c06d): what was set up, with blue tick discs, then into the app. */
+function Privacy({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+  return (
+    <section>
+      <Title sub="Choose what to share with Phaethon’s developers. You can change each choice later in Settings → Privacy.">
+        Your privacy choices
+      </Title>
+      <OnboardingPrivacy
+        onSaved={onNext}
+        actions={(busy) => (
+          <Footer onBack={onBack}>
+            <Button type="submit" pending={busy} disabled={busy}>
+              Continue
+            </Button>
+          </Footer>
+        )}
+      />
+    </section>
+  );
+}
+
 function AllSet({ draft, onBack, onDone }: { draft: Draft; onBack: () => void; onDone: () => void }) {
   const openSettings = () => {
     onDone();

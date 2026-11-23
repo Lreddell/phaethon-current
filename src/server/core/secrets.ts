@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { IDENTITY } from "#shared/channel.ts";
+import { isDevChannel } from "../env.ts";
 import { Refusal } from "../rpc/registry.ts";
 import { byteLength } from "./fsx.ts";
 import { vaultName } from "./vault.ts";
@@ -15,7 +17,8 @@ import { ChunkedSecretStore, type SecretStore } from "./chunked-secrets.ts";
  * On macOS entries go through `/usr/bin/security` instead (see SecurityToolStore).
  */
 
-export const SERVICE = "phaethon";
+/** `phaethon`, or `phaethon-dev` in a dev build, so the two never share a saved key. */
+export const SERVICE = IDENTITY.keychainService;
 const LEGACY_SERVICE = "steward";
 
 export type Store = SecretStore;
@@ -141,6 +144,9 @@ export function parsePassword(stderr: string): string {
 }
 
 let store: Store | undefined;
+const cache = new Map<string, string | null>();
+const cacheKey = (account: string) => `${SERVICE}\0${account}`;
+
 function backend(): Store {
   if (!store) {
     const native = process.env.PHAETHON_KEYRING === "memory" ? new MemoryStore() : process.platform === "darwin" ? new SecurityToolStore() : new KeyringStore();
@@ -153,21 +159,31 @@ function backend(): Store {
 export function resetMemoryKeychain(): void {
   const memory = new MemoryStore();
   store = process.platform === "win32" ? new ChunkedSecretStore(memory) : memory;
+  cache.clear();
 }
 
 /** Reads an entry, moving a legacy `steward` entry over to `phaethon` the first time. */
 export function keychainGet(account: string): string | null {
+  const k = cacheKey(account);
+  if (cache.has(k)) return cache.get(k)!;
   try {
     const value = backend().get(SERVICE, account);
-    if (value !== null) return value;
+    if (value !== null || isDevChannel()) {
+      cache.set(k, value);
+      return value;
+    }
     const legacy = backend().get(LEGACY_SERVICE, account);
-    if (legacy === null) return null;
+    if (legacy === null) {
+      cache.set(k, null);
+      return null;
+    }
     backend().set(SERVICE, account, legacy);
     try {
       backend().delete(LEGACY_SERVICE, account);
     } catch {
       // The copy is saved; a leftover legacy entry is harmless.
     }
+    cache.set(k, legacy);
     return legacy;
   } catch (e) {
     if (e instanceof Refusal) throw e;
@@ -178,7 +194,9 @@ export function keychainGet(account: string): string | null {
 export function keychainSet(account: string, value: string, failure = "could not save to the keychain"): void {
   try {
     backend().set(SERVICE, account, value);
+    cache.set(cacheKey(account), value);
   } catch (e) {
+    cache.delete(cacheKey(account));
     if (e instanceof Refusal) throw e;
     throw new Refusal(`${failure}: ${(e as Error).message}`);
   }
@@ -187,7 +205,9 @@ export function keychainSet(account: string, value: string, failure = "could not
 export function keychainDelete(account: string, failure = "could not remove the key from the keychain"): void {
   try {
     backend().delete(SERVICE, account);
+    cache.set(cacheKey(account), null);
   } catch (e) {
+    cache.delete(cacheKey(account));
     if (e instanceof Refusal) throw e;
     throw new Refusal(`${failure}: ${(e as Error).message}`);
   }
